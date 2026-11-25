@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from .criteria import normalize_criterion
+from .selfcheck import self_check
 from .models import (
     AGENT_NAME,
     DEFECT_TYPES,
@@ -173,6 +174,20 @@ def render(report: Report) -> str:
     if report.dropped_violations > 0:
         out += ["", f"Отброшено замечаний без подтверждённой цитаты: {report.dropped_violations}"]
     out.append("")
+    if report.critic_ran:
+        k = len(report.critic_rejected)
+        out += [f"Критик проверил замечания: подтверждено {c['total']}, исправлено "
+                f"{report.critic_adjusted} (критичность, тип или критерий), отклонено {k}.", ""]
+        if k:
+            out += ["Отклонённые критиком замечания:", ""]
+            for i, (v, reason) in enumerate(report.critic_rejected, 1):
+                ids = ", ".join(v.req_ids) or "набор"
+                where = f" ({v.location.ru()})" if v.location else ""
+                out.append(f"{i}. ({ids}) {DEFECT_TYPES.get(v.defect, v.defect)}: "
+                           f"«{_short(v.quote, 100)}»{where} — причина: {_one_line(reason)}")
+            out.append("")
+    else:
+        out += ["Критик не запускался.", ""]
 
     # 6
     vd = report.verdict
@@ -187,4 +202,9 @@ def render(report: Report) -> str:
     else:
         out.append("Нет обязательных исправлений.")
     out.append("")
-    return "\n".join(out)
+    body = "\n".join(out)
+    rows = ["### Самопроверка отчёта", "", "| Правило | Результат | Подробности |", "|---|---|---|"]
+    for rule, ok, detail in self_check(report, body):
+        rows.append(f"| {_cell(rule)} | {'✅' if ok else '❌'} | {_cell(detail)} |")
+    rows.append("")
+    return body + "\n" + "\n".join(rows)

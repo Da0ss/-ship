@@ -105,25 +105,28 @@
   <path d="M390,570 H444" class="ln" marker-end="url(#a)"/>
   <path d="M970,570 H1024" class="ln" marker-end="url(#a)"/>
 
-  <!-- row 4: verdict & report -->
+  <!-- row 4: critic, verdict, report -->
   <path d="M1295,640 V676 H215 V708" class="ln" marker-end="url(#a)"/>
 
-  <rect x="40" y="714" width="350" height="130" rx="12" class="code"/>
-  <rect x="40" y="714" width="80" height="26" rx="12" fill="#059669"/><text x="52" y="732" class="st">Этап 4</text>
-  <text x="60" y="766" class="t">Решение</text>
-  <text x="60" y="792" class="s">критичных = 0 → можно</text>
-  <text x="60" y="816" class="s">начинать разработку и тесты</text>
+  <rect x="40" y="714" width="350" height="130" rx="12" class="llm"/>
+  <rect x="40" y="714" width="80" height="26" rx="12" fill="#2563eb"/><text x="52" y="732" class="st">Этап 4</text>
+  <text x="60" y="766" class="t">Критик</text>
+  <text x="60" y="792" class="s">каждое замечание: подтвердить,</text>
+  <text x="60" y="814" class="s">исправить или отклонить с причиной</text>
+  <text x="60" y="834" class="f">отклонено &gt; 60 % → только повторы</text>
 
   <rect x="450" y="714" width="520" height="130" rx="12" class="llm"/>
-  <text x="470" y="752" class="t">Обоснование вердикта</text>
-  <text x="470" y="778" class="s">summary + «что исправить первым»</text>
-  <text x="470" y="802" class="s">(без ответа модели — текст по правилам)</text>
+  <rect x="450" y="714" width="80" height="26" rx="12" fill="#2563eb"/><text x="462" y="732" class="st">Этап 5</text>
+  <text x="470" y="766" class="t">Решение и вывод</text>
+  <text x="470" y="792" class="s">код: критичных = 0 → можно начинать</text>
+  <text x="470" y="816" class="s">LLM: обоснование и «что исправить первым»</text>
+  <text x="470" y="834" class="f">только по подтверждённым замечаниям</text>
 
   <rect x="1030" y="714" width="530" height="130" rx="12" class="io"/>
   <text x="1050" y="748" class="t">Отчёт на русском (6 разделов)</text>
-  <text x="1050" y="774" class="s">паспорт · таблица требований · проверка каждого</text>
-  <text x="1050" y="798" class="s">· набор · итог · вердикт; критерии в единой форме</text>
-  <text x="1050" y="822" class="f">report.py + criteria.py → reports/report.md</text>
+  <text x="1050" y="774" class="s">паспорт · требования · проверка · набор · итог</text>
+  <text x="1050" y="798" class="s">· вердикт + самопроверка отчёта (8 правил, код)</text>
+  <text x="1050" y="822" class="f">report.py + selfcheck.py → reports/report.md</text>
 
   <path d="M390,779 H444" class="ln" marker-end="url(#a)"/>
   <path d="M970,779 H1024" class="ln" marker-end="url(#a)"/>
@@ -131,7 +134,7 @@
   <!-- infrastructure -->
   <rect x="40" y="890" width="1520" height="160" rx="14" class="inf"/>
   <text x="60" y="922" class="t">Инфраструктура вызовов LLM</text>
-  <text x="440" y="922" class="s">все этапы с LLM (1б, 2, 3, 3б, обоснование вердикта) вызывают модель через кэш и клиент</text>
+  <text x="440" y="922" class="s">все этапы с LLM (1б, 2, 3, 3б, 4, 5) вызывают модель через кэш и клиент</text>
 
   <rect x="60" y="940" width="440" height="94" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
   <text x="78" y="968" class="t" style="font-size:17px">cache.py — кэш ответов</text>

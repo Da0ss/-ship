@@ -19,7 +19,9 @@ class FakeClient:
 
     model = "fake-model"
 
-    def __init__(self, extract=None, checks=None, set_check=None, verdict=None, coverage=None):
+    def __init__(self, extract=None, checks=None, set_check=None, verdict=None, coverage=None,
+                 critic=None):
+        self.critic = critic  # callable(list of violation views) -> dict, None = confirm all
         self.coverage = coverage if coverage is not None else {"matrix": []}
         self.extract = extract if extract is not None else EXTRACT
         self.checks = checks  # callable(rids) -> dict, or None for default
@@ -39,6 +41,13 @@ class FakeClient:
             return self.checks(rids) if self.checks else default_checks(rids)
         if "набор требований целиком" in system:
             return copy.deepcopy(self.set_check)
+        if "независимый критик" in system:
+            block = prompt.split("Замечания:")[1].split("Документ:")[0]
+            views = json.loads(block)
+            if self.critic:
+                return self.critic(views)
+            return {"reviews": [{"vid": v["vid"], "decision": "confirm", "reason": "ок"}
+                                for v in views]}
         if "тест-аналитик" in system:
             return copy.deepcopy(self.coverage)
         if "вердикт" in system:

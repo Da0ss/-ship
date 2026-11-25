@@ -81,7 +81,7 @@ def classify_candidates(document: Document, client: LLMClient,
     from .segmenter import format_for_llm, segment
 
     cands = segment(document)
-    log(f"Шаг 1/4: код выделил фрагментов: {len(cands)}; модель отбирает требования…")
+    log(f"Шаг 1/5: код выделил фрагментов: {len(cands)}; модель отбирает требования…")
     if not cands:
         return []
     data = client.generate_json(
@@ -120,7 +120,7 @@ def classify_candidates(document: Document, client: LLMClient,
 def extract_requirements(document: Document, client: LLMClient, locator: Locator,
                          log: Log = _log_default) -> list[Requirement]:
     """Stage 1, fallback mode (VALIDATOR_SEGMENTER=off): the LLM cuts the text itself."""
-    log("Шаг 1/4: нарезка документа на требования…")
+    log("Шаг 1/5: нарезка документа на требования…")
     data = client.generate_json(
         P.EXTRACT_SYSTEM,
         P.EXTRACT_PROMPT.format(kinds=", ".join(P.KINDS), document=document.numbered_text()),
@@ -231,7 +231,7 @@ def check_requirements(document: Document, client: LLMClient, locator: Locator,
     while queue:
         batch = queue.pop(0)
         attempt += 1
-        log(f"Шаг 2/4: проверка требований {batch[0].rid}…{batch[-1].rid}")
+        log(f"Шаг 2/5: проверка требований {batch[0].rid}…{batch[-1].rid}")
         prompt = P.CHECK_PROMPT.format(
             characteristics=P.describe(REQ_CHARACTERISTICS),
             defects=", ".join(f"{k} ({v})" for k, v in DEFECT_TYPES.items()),
@@ -288,7 +288,7 @@ def _same(v: Violation, other: Violation) -> bool:
 
 def check_set(document: Document, client: LLMClient, locator: Locator, reqs: list[Requirement],
               checks: list[RequirementCheck], log: Log = _log_default) -> tuple[SetCheck, int]:
-    log("Шаг 3/4: проверка набора целиком (противоречия, пробелы)…")
+    log("Шаг 3/5: проверка набора целиком (противоречия, пробелы)…")
     known = [f"{c.rid}: {DEFECT_TYPES[v.defect]} — «{v.quote[:80]}»"
              for c in checks for v in c.violations]
     acceptance = [f"{r.rid} (строка {r.location.line_start}): {r.summary}" for r in reqs
@@ -415,7 +415,7 @@ def check_coverage(document: Document, client: LLMClient, locator: Locator,
     targets += [r for r in reqs if r.kind in COVERAGE_KINDS and r not in targets]
     if not targets:
         return [], {}, 0
-    log("Шаг 3б/4: матрица покрытия требований критериями приёмки…")
+    log("Шаг 3б/5: матрица покрытия требований критериями приёмки…")
     prompt = P.COVERAGE_PROMPT.format(
         acceptance=P.dumps([_req_view(r) for r in acceptance]) if acceptance else "нет",
         requirements=P.dumps([_req_view(r) for r in targets]),
@@ -451,12 +451,105 @@ def check_coverage(document: Document, client: LLMClient, locator: Locator,
     return kept, matrix, dropped
 
 
+# --- stage 3c: critic ------------------------------------------------------------------------
+
+def _violation_view(vid: str, v: Violation) -> dict[str, Any]:
+    return {"vid": vid, "req_ids": v.req_ids, "defect": v.defect, "severity": v.severity,
+            "criterion": v.criterion, "quote": v.quote,
+            "lines": [v.location.line_start, v.location.line_end] if v.location else None,
+            "quote2": v.quote2,
+            "lines2": [v.location2.line_start, v.location2.line_end] if v.location2 else None,
+            "explanation": v.explanation, "fix": v.fix}
+
+
+def critic_review(document: Document, client: LLMClient, checks: list[RequirementCheck],
+                  set_check: SetCheck, log: Log = _log_default, batch_size: int = 30
+                  ) -> tuple[list[tuple[Violation, str]], int]:
+    """Second opinion on every finding. Returns (rejected with reasons, number adjusted).
+    Changes checks and set_check in place."""
+    items: list[tuple[str, Violation, list[Violation]]] = []
+    for c in checks:
+        for v in c.violations:
+            items.append((f"V-{len(items) + 1:03d}", v, c.violations))
+    for v in set_check.violations:
+        items.append((f"V-{len(items) + 1:03d}", v, set_check.violations))
+    if not items:
+        return [], 0
+    log(f"Шаг 4/5: критик проверяет замечания ({len(items)})…")
+    decisions: dict[str, dict[str, Any]] = {}
+    for i in range(0, len(items), batch_size):
+        part = items[i:i + batch_size]
+        prompt = P.CRITIC_PROMPT.format(
+            defects=", ".join(f"{k} ({v})" for k, v in DEFECT_TYPES.items()),
+            violations=P.dumps([_violation_view(vid, v) for vid, v, _ in part]),
+            document=document.numbered_text(),
+        )
+        data = client.generate_json(P.CRITIC_SYSTEM, prompt, P.CRITIC_SCHEMA)
+        for r in (data.get("reviews") or []) if isinstance(data, dict) else []:
+            if isinstance(r, dict) and r.get("vid"):
+                decisions[r["vid"]] = r
+
+    vids = {vid for vid, _, _ in items}
+    rejects = []
+    for vid, v, owner in items:
+        d = decisions.get(vid, {})
+        dup = d.get("duplicate_of")
+        if d.get("decision") == "reject" or (dup in vids and dup != vid):
+            reason = str(d.get("reason") or "").strip()
+            if dup in vids and dup != vid:
+                reason = f"повтор замечания {dup}. {reason}".strip()
+            rejects.append((vid, v, owner, reason or "ложное замечание"))
+    # Guard: a critic that rejects most findings is likely broken; keep only its duplicates.
+    max_share = float(os.environ.get("VALIDATOR_CRITIC_MAX_REJECT", "0.6"))
+    if len(rejects) > max_share * len(items):
+        log(f"  критик отклонил {len(rejects)} из {len(items)} — больше {max_share:.0%}; "
+            "применяю только отклонение повторов")
+        rejects = [r for r in rejects if r[3].startswith("повтор замечания")]
+
+    rejected: list[tuple[Violation, str]] = []
+    for vid, v, owner, reason in rejects:
+        if v in owner:
+            owner.remove(v)
+            rejected.append((v, reason))
+    adjusted = 0
+    rejected_ids = {id(v) for v, _ in rejected}
+    for vid, v, _ in items:
+        d = decisions.get(vid, {})
+        if id(v) in rejected_ids or d.get("decision") != "adjust":
+            continue
+        changed = False
+        if d.get("severity") in SEVERITIES and d["severity"] != v.severity:
+            v.severity, changed = d["severity"], True
+        if d.get("defect") in DEFECT_TYPES and d["defect"] != v.defect:
+            # A contradiction needs two quotes; do not turn a one-quote finding into one.
+            if d["defect"] != "contradiction" or v.quote2:
+                v.defect, changed = d["defect"], True
+        if str(d.get("criterion") or "").strip() and d["criterion"].strip() != v.criterion:
+            v.criterion, changed = d["criterion"].strip(), True
+        adjusted += changed
+
+    # Characteristics follow the remaining evidence.
+    for c in checks:
+        c.characteristics = _apply_evidence(c.characteristics, c.violations)
+    remaining = [v for c in checks for v in c.violations] + set_check.violations
+    chars = set_check.characteristics
+    if chars.get("consistent") == "fail" and not any(v.defect == "contradiction" for v in remaining):
+        chars["consistent"] = "pass"
+    if chars.get("complete") == "fail" and not any(v.defect == "gap" for v in set_check.violations):
+        chars["complete"] = "pass"
+    if chars.get("traceable") == "fail" and not any(
+            v.defect == "traceability" for v in set_check.violations):
+        chars["traceable"] = "pass"
+    log(f"  подтверждено: {len(remaining)}, исправлено: {adjusted}, отклонено: {len(rejected)}")
+    return rejected, adjusted
+
+
 # --- stage 4: verdict ---------------------------------------------------------------------------
 
 def make_verdict(document: Document, client: LLMClient, reqs: list[Requirement],
                  checks: list[RequirementCheck], set_check: SetCheck,
-                 log: Log = _log_default) -> Verdict:
-    log("Шаг 4/4: вердикт…")
+                 log: Log = _log_default, n_rejected: int = 0) -> Verdict:
+    log("Шаг 5/5: вывод и вердикт…")
     allv = [(c.rid, v) for c in checks for v in c.violations] + [
         (",".join(v.req_ids) or "набор", v) for v in set_check.violations]
     sev = {s: sum(1 for _, v in allv if v.severity == s) for s in SEVERITIES}
@@ -467,7 +560,7 @@ def make_verdict(document: Document, client: LLMClient, reqs: list[Requirement],
     prompt = P.VERDICT_PROMPT.format(
         title=document.title, n_req=len(reqs), n_viol=len(allv), n_crit=sev["critical"],
         n_major=sev["major"], n_minor=sev["minor"], violations="\n".join(lines[:80]) or "нет",
-        dev=yes_no[ready], test=yes_no[ready],
+        dev=yes_no[ready], test=yes_no[ready], n_rejected=n_rejected,
     )
     try:
         data = client.generate_json(P.VERDICT_SYSTEM, prompt, P.VERDICT_SCHEMA)
@@ -508,6 +601,12 @@ def run(document: Document, client: LLMClient, passport: Passport,
         set_check.characteristics["complete"] = "fail"
         set_check.characteristics["able_to_be_validated"] = "fail"
     dropped2 += dropped3
-    verdict = make_verdict(document, client, reqs, checks, set_check, log)
+    rejected: list[tuple[Violation, str]] = []
+    adjusted = 0
+    critic_on = os.environ.get("VALIDATOR_CRITIC", "on").lower() != "off"
+    if critic_on:
+        rejected, adjusted = critic_review(document, client, checks, set_check, log)
+    verdict = make_verdict(document, client, reqs, checks, set_check, log, len(rejected))
     return Report(passport=passport, requirements=reqs, checks=checks, set_check=set_check,
-                  verdict=verdict, dropped_violations=dropped1 + dropped2)
+                  verdict=verdict, dropped_violations=dropped1 + dropped2,
+                  critic_rejected=rejected, critic_adjusted=adjusted, critic_ran=critic_on)

@@ -147,6 +147,10 @@ class Report:
     set_check: SetCheck
     verdict: Verdict
     dropped_violations: int = 0  # violations removed because their quotes were not found
+    # Critic stage: violations the critic rejected, with the reason; number of adjusted ones.
+    critic_rejected: list[tuple[Violation, str]] = field(default_factory=list)
+    critic_adjusted: int = 0
+    critic_ran: bool = False
 
 
 class LLMClient(Protocol):
