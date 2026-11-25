@@ -1,0 +1,4 @@
+google-genai>=3.6
+pypdf>=6.17
+python-dotenv>=1.2
+pytest>=9.1

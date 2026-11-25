@@ -1,0 +1,92 @@
+"""Command line interface of the requirements validator."""
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+from .models import Passport
+from .report import render
+
+
+def _log(msg: str) -> None:
+    print(msg, file=sys.stderr, flush=True)
+
+
+def _agent_version() -> str:
+    here = Path(__file__).resolve().parent
+    try:
+        out = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"], cwd=here,
+                             capture_output=True, text=True, timeout=10)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        from . import __version__
+        return str(__version__)
+    except Exception:
+        return "unknown"
+
+
+def _parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="python -m validator",
+                                description="Проверка документа требований по ISO/IEC/IEEE 29148 и IEEE 830.")
+    p.add_argument("input", help="путь к файлу с требованиями")
+    p.add_argument("output", help="путь к итоговому отчёту .md")
+    p.add_argument("--model", default=None, help="модель Gemini (переопределяет GEMINI_MODEL)")
+    p.add_argument("--env-file", default=".env", help="файл с переменными окружения (по умолчанию .env)")
+    return p
+
+
+def main(argv: list[str] | None = None, client=None) -> int:
+    args = _parser().parse_args(argv)
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(args.env_file, override=False)
+    except ImportError:
+        pass
+
+    if not os.path.isfile(args.input):
+        _log(f"Ошибка: файл не найден: {args.input}")
+        return 2
+
+    if client is None:
+        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+            _log("Ошибка: не задан GEMINI_API_KEY. Скопируйте .env.example в .env и впишите ключ "
+                 "(https://aistudio.google.com/apikey) или задайте переменную окружения.")
+            return 2
+        from .llm import GeminiClient
+        client = GeminiClient(model=args.model)
+
+    from .reader import read_document
+    from .pipeline import run
+
+    try:
+        _log(f"Чтение документа: {args.input}")
+        document = read_document(args.input)
+        _log(f"Прочитано строк: {len(document.lines)}. Модель: {client.model}. Проверка требований…")
+        passport = Passport(
+            document=args.input,
+            document_title=document.title,
+            date=datetime.now().astimezone().isoformat(timespec="seconds"),
+            model=client.model,
+            agent_version=_agent_version(),
+        )
+        report = run(document, client, passport)
+    except (FileNotFoundError, ValueError) as exc:
+        _log(f"Ошибка: {exc}")
+        return 2
+    except Exception as exc:  # LLM/API failure: short message instead of a traceback
+        _log(f"Ошибка при обращении к модели: {type(exc).__name__}: {exc}")
+        return 1
+
+    _log("Формирование отчёта…")
+    out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(render(report), encoding="utf-8")
+    _log(f"Готово. Отчёт: {out_path}")
+    return 0
