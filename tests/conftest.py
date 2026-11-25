@@ -29,6 +29,8 @@ class FakeClient:
 
     def generate_json(self, system, prompt, schema=None):
         self.calls.append((system, prompt))
+        if "Код уже нарезал документ" in system:
+            return classify_answer(prompt)
         if "нарезать документ" in system:
             return copy.deepcopy(self.extract)
         if "строгий ревьюер" in system:
@@ -141,6 +143,28 @@ SET = {
 
 VERDICT = {"summary": "Документ не готов: есть противоречия.",
            "fix_first": ["(R-02) Выбрать одну дату для месяца.", "(R-06) Заменить GET на POST."]}
+
+
+def classify_answer(prompt):
+    """Mark every candidate as a requirement except checklist rows ("Да / Нет") and line 57."""
+    items = []
+    for line in prompt.split("Кандидаты:")[1].strip().splitlines():
+        cid, lines, block, doc_id, text = [x.strip() for x in line.split(" | ", 4)]
+        start = int(lines[1:].split("-")[0])
+        is_req = "Да / Нет" not in text and start != 57
+        kind = "acceptance" if 63 <= start <= 65 else ("functional" if doc_id != "-" else "api")
+        items.append({"cid": cid, "is_requirement": is_req, "kind": kind,
+                      "summary": f"Кратко {cid}" if is_req else ""})
+    return {"items": items}
+
+
+@pytest.fixture(autouse=True)
+def llm_segmenter_mode(monkeypatch, request):
+    """Old tests use the LLM extraction mode; tests marked 'segmenter' use the code segmenter."""
+    if "segmenter" not in request.keywords:
+        monkeypatch.setenv("VALIDATOR_SEGMENTER", "off")
+    else:
+        monkeypatch.delenv("VALIDATOR_SEGMENTER", raising=False)
 
 
 @pytest.fixture

@@ -95,8 +95,9 @@ def test_candidate_pairs_cover_known_conflicts(document, fake):
 def test_weak_word_hints(document, fake):
     reqs = pipeline.extract_requirements(document, fake, Locator(document), log=lambda m: None)
     hints = pipeline.weak_word_hints(reqs)
-    assert "в течение" in hints["R-04"]
-    assert "максимум" in hints["R-03"]
+    assert any(h.startswith("в течение [Неопределённое время]") for h in hints["R-04"])
+    assert any(h.startswith("максимум [Неопределённое количество]") for h in hints["R-03"])
+    assert "R-01" not in hints or not any("держатель" in h for h in hints["R-01"])
 
 
 def test_report_structure_and_citations(document, fake, passport):

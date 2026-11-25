@@ -59,8 +59,67 @@ def _status(value: Any) -> str:
 
 # --- stage 1: extraction ------------------------------------------------------------------------
 
+_MARKUP = re.compile(r"^\s*(?:[*+\-•]|\d+[.)]|[a-zа-я]\))\s+", re.IGNORECASE)
+
+
+def _clean_quote(text: str) -> str:
+    """Candidate text without list markers, bold and code markup; table pipes become ' | '."""
+    t = text.strip()
+    if t.startswith("|"):
+        cells = [c.strip() for c in t.strip("|").split("|")]
+        t = " | ".join(c for c in cells if c)
+    else:
+        t = _MARKUP.sub("", t, count=1)
+    t = t.replace("**", "").replace("`", "")
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def classify_candidates(document: Document, client: LLMClient,
+                        log: Log = _log_default) -> list[Requirement]:
+    """Stage 1, main mode: the code cuts the text, the LLM only marks requirements."""
+    from .models import Location
+    from .segmenter import format_for_llm, segment
+
+    cands = segment(document)
+    log(f"Шаг 1/4: код выделил фрагментов: {len(cands)}; модель отбирает требования…")
+    if not cands:
+        return []
+    data = client.generate_json(
+        P.CLASSIFY_SYSTEM,
+        P.CLASSIFY_PROMPT.format(kinds=", ".join(P.KINDS), candidates=format_for_llm(cands)),
+        P.CLASSIFY_SCHEMA,
+    )
+    items = data.get("items", []) if isinstance(data, dict) else []
+    by_cid = {i.get("cid"): i for i in items if isinstance(i, dict)}
+    missing = [c.cid for c in cands if c.cid not in by_cid]
+    if missing:
+        log(f"  модель не оценила фрагментов: {len(missing)}; они считаются требованиями")
+    reqs: list[Requirement] = []
+    for c in cands:
+        item = by_cid.get(c.cid, {"is_requirement": True, "kind": "other", "summary": ""})
+        # A fragment with a document ID is always a requirement.
+        if not (item.get("is_requirement") or c.doc_id):
+            continue
+        quote = _clean_quote(c.text)
+        if c.doc_id and quote.startswith(c.doc_id):
+            quote = quote[len(c.doc_id):].lstrip(" .:—-")
+        kind = item.get("kind") if item.get("kind") in P.KINDS else "other"
+        reqs.append(Requirement(
+            rid="", doc_id=c.doc_id, summary=str(item.get("summary") or "").strip() or quote[:80],
+            quote=quote, section=c.section, kind=kind,
+            location=Location(c.line_start, c.line_end,
+                              next((l.page for l in document.lines if l.no == c.line_start), None)),
+        ))
+    width = max(2, len(str(len(reqs))))
+    for n, req in enumerate(reqs, 1):
+        req.rid = f"R-{n:0{width}d}"
+    log(f"  найдено требований: {len(reqs)}")
+    return reqs
+
+
 def extract_requirements(document: Document, client: LLMClient, locator: Locator,
                          log: Log = _log_default) -> list[Requirement]:
+    """Stage 1, fallback mode (VALIDATOR_SEGMENTER=off): the LLM cuts the text itself."""
     log("Шаг 1/4: нарезка документа на требования…")
     data = client.generate_json(
         P.EXTRACT_SYSTEM,
@@ -114,12 +173,15 @@ def _duplicate(a: Requirement, b: Requirement) -> bool:
 # --- stage 2: per-requirement check -------------------------------------------------------------
 
 def weak_word_hints(reqs: list[Requirement]) -> dict[str, list[str]]:
+    """Ambiguity indicators per requirement, matched by lemma (pymorphy3) with class names."""
+    from .lexicon import CLASS_RU, find_weak_terms
+
     out: dict[str, list[str]] = {}
     for req in reqs:
-        text = normalize(req.quote)
-        found = [w for w in P.WEAK_WORDS if re.search(r"(?<!\w)" + re.escape(normalize(w)), text)]
-        if found:
-            out[req.rid] = found
+        hits = find_weak_terms(req.quote)
+        if hits:
+            out[req.rid] = [f"{h['term']} [{CLASS_RU.get(h['class'], h['class'])}]: «{h['match']}»"
+                            for h in hits]
     return out
 
 
@@ -430,7 +492,10 @@ def run(document: Document, client: LLMClient, passport: Passport,
         log: Log = _log_default, batch_size: int | None = None) -> Report:
     batch_size = batch_size or _int(os.environ.get("VALIDATOR_BATCH_SIZE"), 8) or 8
     locator = Locator(document)
-    reqs = extract_requirements(document, client, locator, log)
+    if os.environ.get("VALIDATOR_SEGMENTER", "on").lower() == "off":
+        reqs = extract_requirements(document, client, locator, log)
+    else:
+        reqs = classify_candidates(document, client, log)
     if not reqs:
         raise ValueError("Модель не выделила ни одного требования с подтверждённой цитатой.")
     checks, dropped1 = check_requirements(document, client, locator, reqs, batch_size, log)

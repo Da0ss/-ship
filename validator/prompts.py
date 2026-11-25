@@ -9,14 +9,7 @@ from .models import DEFECT_TYPES, REQ_CHARACTERISTICS, SET_CHARACTERISTICS, SEVE
 KINDS = ["functional", "nonfunctional", "data", "integration", "acceptance", "api", "ui",
          "architecture", "process", "other"]
 
-# Indicators of ambiguity and unverifiability (29148 5.2.7 "requirements language criteria").
-WEAK_WORDS = [
-    "быстро", "удобно", "понятно", "просто", "оптимально", "эффективно", "надёжно", "надежно",
-    "максимум", "минимум", "по возможности", "при необходимости", "и т.д.", "и т. д.", "и др.",
-    "в течение", "своевременно", "достаточно", "адекватн", "гибк", "дружественн", "user-friendly",
-    "и далее", "как правило", "обычно", "при ошибке", "результат", "соответствующ", "всех", "любой",
-    "или", "по умолчанию", "независимо",
-]
+# Ambiguity indicators: see validator/lexicon.py (matched by lemma with pymorphy3).
 
 COMMON_RULES = """Правила для всех ответов:
 - Пиши на русском языке. Коротко и конкретно.
@@ -74,6 +67,29 @@ EXTRACT_PROMPT = """Выдели из документа ВСЕ требован
 <document>
 {document}
 </document>"""
+
+CLASSIFY_SYSTEM = (
+    "Ты — ведущий системный аналитик и эксперт по ISO/IEC/IEEE 29148:2018 и IEEE 830-1998. "
+    "Код уже нарезал документ на фрагменты. Ты решаешь, какие фрагменты являются требованиями.\n"
+    + COMMON_RULES
+)
+
+CLASSIFY_PROMPT = """Ниже — фрагменты документа (кандидаты). Формат строки:
+"cid | строки | тип блока | ID документа | текст".
+
+Для КАЖДОГО cid верни:
+- is_requirement: true, если фрагмент задаёт поведение, ограничение, данные, интеграцию,
+  производительность, UI, архитектуру, процесс, критерий приёмки или контракт API (метод, URL,
+  авторизация, шаг логики, правило, параметр, тело, поле ответа, код статуса и его пример);
+  false — заголовок-подпись, справочное поле (автор, Jira, продукт, Swagger "—"), строка
+  чек-листа ревью с непроставленными отметками, пустой блок согласующих, служебная пометка;
+- kind: одно из {kinds};
+- summary: краткая формулировка до 15 слов (для is_requirement = false — пустая строка).
+
+Не пропускай cid. Не объединяй и не дели фрагменты.
+
+Кандидаты:
+{candidates}"""
 
 CHECK_SYSTEM = (
     "Ты — строгий ревьюер требований. Ты проверяешь требования по ISO/IEC/IEEE 29148:2018 "
@@ -277,6 +293,26 @@ EXTRACT_SCHEMA: dict[str, Any] = {
         }
     },
     "required": ["requirements"],
+}
+
+CLASSIFY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "cid": _str(),
+                    "is_requirement": {"type": "boolean"},
+                    "kind": _str(enum=KINDS),
+                    "summary": _str(),
+                },
+                "required": ["cid", "is_requirement", "kind", "summary"],
+            },
+        }
+    },
+    "required": ["items"],
 }
 
 CHECK_SCHEMA: dict[str, Any] = {
