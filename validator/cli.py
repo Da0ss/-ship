@@ -19,7 +19,7 @@ def _log(msg: str) -> None:
 def _agent_version() -> str:
     here = Path(__file__).resolve().parent
     try:
-        out = subprocess.run(["git", "describe", "--tags", "--always", "--dirty"], cwd=here,
+        out = subprocess.run(["git", "describe", "--tags", "--long", "--always", "--dirty"], cwd=here,
                              capture_output=True, text=True, timeout=10)
         if out.returncode == 0 and out.stdout.strip():
             return out.stdout.strip()

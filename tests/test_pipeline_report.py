@@ -79,7 +79,10 @@ def test_verdict_ready_without_critical(document, passport):
     report = pipeline.run(document, client, passport, log=lambda m: None)
     assert report.verdict.ready_for_development and report.verdict.ready_for_testing
     assert report.verdict.summary  # fallback text
-    assert counts(report)["total"] == 0
+    # Only the deterministic traceability finding remains: 6 of 7 requirements have no doc ID.
+    assert counts(report)["total"] == 1
+    assert report.set_check.violations[0].defect == "traceability"
+    assert report.set_check.characteristics["traceable"] == "fail"
 
 
 def test_candidate_pairs_cover_known_conflicts(document, fake):
@@ -109,9 +112,47 @@ def test_report_structure_and_citations(document, fake, passport):
     body = md[md.index(HEADINGS[2]):md.index(HEADINGS[4])]
     quotes = re.findall(r"Цитата: «[^»]+» \((строк[аи] [\d–]+)\)", body)
     n = counts(report)["total"]
-    assert n == 7
+    assert n == 8  # 7 from the model + 1 deterministic traceability finding
     assert len(quotes) == n
     assert "место не найдено" not in md and "не найдено |" not in md
     assert "Отброшено замечаний без подтверждённой цитаты: 2" in md
     assert "Можно начинать разработку: Нет" in md
     assert counts(report)["by_severity"]["critical"] == 4
+
+
+def test_traceability_rule(document, fake):
+    reqs = pipeline.extract_requirements(document, fake, Locator(document), log=lambda m: None)
+    stats = pipeline.traceability_stats(reqs)
+    assert stats == {"requirements": 7, "with_document_id": 3, "without_document_id": 4,
+                     "share_with_id": 0.43}
+    v = pipeline.traceability_violation(reqs, stats)
+    assert v.verified and v.location.line_start == 46 and "3 из 7" in v.explanation
+    assert v.req_ids == ["R-04", "R-05", "R-06", "R-07"]
+    for r in reqs:
+        r.doc_id = r.doc_id or "X"
+    assert pipeline.traceability_violation(reqs, pipeline.traceability_stats(reqs)) is None
+
+
+def test_set_finding_repeating_requirement_finding_removed(document, passport):
+    """GET vs save: found per requirement (R-06) and again in the set with another 2nd quote."""
+    from tests.conftest import SET, _v
+    set_check = {"characteristics": {}, "violations": [
+        {**_v("other", "critical", "REST type | GET", None), "req_ids": ["R-06"]},
+        {**_v("contradiction", "critical", "REST type | GET", "Заменить настройку и вернуть"),
+         "req_ids": ["R-06"]},
+        {**_v("contradiction", "critical", "Сохранение порога. Функциональные требования",
+              "Повторное сохранение заменяет действующую настройку"), "req_ids": []},
+    ]}
+    report = pipeline.run(document, FakeClient(set_check=set_check), passport, log=lambda m: None)
+    quotes = [(v.defect, v.quote) for v in report.set_check.violations]
+    assert ("other", "REST type | GET") not in quotes  # same defect, same place, same rid
+    assert ("contradiction", "REST type | GET") in quotes  # other defect type: kept
+    assert any(q.startswith("Сохранение порога") for _, q in quotes)
+
+
+def test_set_prompt_has_coverage_and_stats(document, fake, passport):
+    pipeline.run(document, fake, passport, log=lambda m: None)
+    set_prompt = next(p for s, p in fake.calls if "набор требований целиком" in s)
+    assert "Матрица покрытия" in set_prompt
+    assert "R-05 (строка 64)" in set_prompt
+    assert '"share_with_id": 0.43' in set_prompt

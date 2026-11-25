@@ -1,6 +1,7 @@
 """Markdown report renderer (Russian)."""
 from __future__ import annotations
 
+from .criteria import normalize_criterion
 from .models import (
     AGENT_NAME,
     DEFECT_TYPES,
@@ -74,7 +75,8 @@ def _quote_line(label: str, quote: str, loc) -> str:
 def _violation_lines(n: int, v: Violation, with_req_ids: bool = False) -> list[str]:
     defect = DEFECT_TYPES.get(v.defect, v.defect)
     severity = SEVERITY_RU.get(v.severity, v.severity)
-    lines = [f"{n}. **{defect}** — {severity}. Критерий: {_one_line(v.criterion)}"]
+    criterion = _one_line(normalize_criterion(v.criterion, v.defect, "set" if with_req_ids else "req"))
+    lines = [f"{n}. **{defect}** — {severity}. Критерий: {criterion}"]
     lines.append("   - " + _quote_line("Цитата", v.quote, v.location))
     if v.quote2:
         lines.append("   - " + _quote_line("Цитата 2", v.quote2, v.location2))

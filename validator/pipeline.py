@@ -229,9 +229,14 @@ def check_set(document: Document, client: LLMClient, locator: Locator, reqs: lis
     log("Шаг 3/4: проверка набора целиком (противоречия, пробелы)…")
     known = [f"{c.rid}: {DEFECT_TYPES[v.defect]} — «{v.quote[:80]}»"
              for c in checks for v in c.violations]
+    acceptance = [f"{r.rid} (строка {r.location.line_start}): {r.summary}" for r in reqs
+                  if r.kind == "acceptance"]
+    stats = traceability_stats(reqs)
     prompt = P.SET_PROMPT.format(
         characteristics=P.describe(SET_CHARACTERISTICS),
         known="\n".join(known) or "нет",
+        acceptance="\n".join(acceptance) or "нет ни одного критерия приёмки",
+        stats=P.dumps(stats),
         pairs=P.dumps(candidate_pairs(reqs)),
         requirements=P.dumps([_req_view(r) for r in reqs]),
         document=document.numbered_text(),
@@ -250,14 +255,19 @@ def check_set(document: Document, client: LLMClient, locator: Locator, reqs: lis
     # Remove duplicates inside the set check and repeats of per-requirement findings.
     per_req = [v for c in checks for v in c.violations]
     unique: list[Violation] = []
+    per_req_by_rid = {c.rid: c.violations for c in checks}
     for v in kept:
+        if not v.req_ids:  # attach requirement IDs from quote locations
+            v.req_ids = _rids_at(reqs, v)
         if any(_same(v, o) for o in unique) or any(_same(v, o) for o in per_req):
             continue
+        if _repeats_requirement_finding(v, per_req_by_rid):
+            continue
         unique.append(v)
-    # Attach requirement IDs from quote locations when the model did not give them.
-    for v in unique:
-        if not v.req_ids:
-            v.req_ids = _rids_at(reqs, v)
+    trace = traceability_violation(reqs, stats)
+    if trace and not any(v.defect == "traceability" and "идентификатор" in v.explanation
+                         for v in unique):
+        unique.insert(0, trace)
     raw_chars = data.get("characteristics") or {}
     chars = {k: _status(raw_chars.get(k)) for k in SET_CHARACTERISTICS}
     if any(v.defect == "contradiction" for v in unique) or any(
@@ -269,7 +279,52 @@ def check_set(document: Document, client: LLMClient, locator: Locator, reqs: lis
         chars = {k: ("pass" if s == "fail" else s) for k, s in chars.items()}
         if any(v.defect == "contradiction" for v in per_req):
             chars["consistent"] = "fail"
+    if trace:
+        chars["traceable"] = "fail"
     return SetCheck(chars, unique), dropped
+
+
+def _overlap(a, b) -> bool:
+    return bool(a and b and a.line_start <= b.line_end and b.line_start <= a.line_end)
+
+
+def _repeats_requirement_finding(v: Violation, per_req_by_rid: dict[str, list[Violation]]) -> bool:
+    """A set finding repeats a per-requirement one: same defect at the same place of the same
+    requirement (e.g. GET vs "save" found per requirement and again in the set check)."""
+    for rid in v.req_ids:
+        for o in per_req_by_rid.get(rid, []):
+            if o.defect != v.defect:
+                continue
+            if any(_overlap(x, y) for x in (v.location, v.location2) if x
+                   for y in (o.location,) if y):
+                return True
+    return False
+
+
+def traceability_stats(reqs: list[Requirement]) -> dict[str, Any]:
+    with_id = [r.rid for r in reqs if r.doc_id]
+    return {"requirements": len(reqs), "with_document_id": len(with_id),
+            "without_document_id": len(reqs) - len(with_id),
+            "share_with_id": round(len(with_id) / len(reqs), 2) if reqs else 0.0}
+
+
+def traceability_violation(reqs: list[Requirement], stats: dict[str, Any]) -> Violation | None:
+    """Deterministic rule (830 4.3.8): fewer than 80% of requirements have a document ID."""
+    if not reqs or stats["share_with_id"] >= 0.8:
+        return None
+    no_id = [r for r in reqs if not r.doc_id]
+    first = no_id[0]
+    sample = ", ".join(r.rid for r in no_id[:10]) + ("…" if len(no_id) > 10 else "")
+    return Violation(
+        defect="traceability", criterion="IEEE 830 4.3.8 — Прослеживаемость",
+        severity="major", quote=first.quote, location=first.location, verified=True,
+        explanation=(f"Идентификатор в документе есть только у {stats['with_document_id']} из "
+                     f"{stats['requirements']} требований. Без идентификатора: {sample}. На такие "
+                     "требования нельзя сослаться из тест-кейсов и задач."),
+        fix="Присвоить уникальный идентификатор каждому требованию всех разделов "
+            "(например, НФ-1, Д-1, И-1, КП-1, API-1) и указать связь с критериями приёмки.",
+        req_ids=[r.rid for r in no_id],
+    )
 
 
 def _rids_at(reqs: list[Requirement], v: Violation) -> list[str]:
