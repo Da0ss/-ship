@@ -157,3 +157,34 @@ def test_cli_passes_ocr_pages(tmp_path, monkeypatch):
     assert cli.main([str(path), str(out), "--env-file", str(tmp_path / "n")],
                     client=FakeClient()) == 0
     assert "| OCR | страницы 1 (распознаны Tesseract) |" in out.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("text", [
+    "Хранить данные карты", "время простоя сервиса", "расходы переходят от суммы ниже порога",
+    "сумма больше 1 000 ₸", "отвечает быстрее, чем за 2 секунды",
+    "4. Заменить настройку и вернуть результат сохранения.",
+    "ниже нового порога",
+])
+def test_lexicon_baseline_and_noun_cases_not_flagged(text):
+    from validator.lexicon import find_weak_terms
+    hits = [h for h in find_weak_terms(text) if h["class"] != "and_or"]
+    assert hits == [], hits
+
+
+@pytest.mark.parametrize("text,cls", [
+    ("лучший интерфейс", "superlative"), ("хороший интерфейс", "subjective"),
+    ("данный параметр", "undefined_reference"), ("простой интерфейс", "subjective"),
+])
+def test_lexicon_true_hits_kept(text, cls):
+    from validator.lexicon import find_weak_terms
+    classes = [h["class"] for h in find_weak_terms(text)]
+    assert classes == [cls], classes
+
+
+def test_lexicon_on_task_document(document):
+    from validator.lexicon import find_weak_terms
+    line = {l.no: l.text for l in document.lines}
+    f3 = [h["match"].lower() for h in find_weak_terms(line[39])]
+    assert "ниже" not in f3 and "выше" not in f3 and "максимум" in f3
+    assert find_weak_terms(line[49]) == []
+    assert [h["class"] for h in find_weak_terms(line[46])] == ["vague_time"]

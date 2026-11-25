@@ -30,7 +30,7 @@ WEAK_TERMS: dict[str, list[str]] = {
         "удобный", "удобно", "понятный", "понятно", "простой", "просто",
         "дружественный", "интуитивный", "интуитивно", "user-friendly",
         "гибкий", "адекватный", "эффективный", "эффективно", "надёжный",
-        "надёжно", "комфортный", "современный",
+        "надёжно", "комфортный", "современный", "хороший", "хорошо",
     ],
     "vague_adverb": [
         "быстро", "своевременно", "достаточно", "значительно", "примерно",
@@ -133,19 +133,23 @@ def morph_available() -> bool:
 
 
 @lru_cache(maxsize=65536)
-def _parse(word: str) -> tuple[frozenset, bool]:
-    """(all normal forms incl. the word itself, has a COMP parse)."""
+def _parse(word: str) -> tuple[frozenset, bool, tuple]:
+    """(all normal forms incl. the word itself, has a COMP parse,
+    per-parse info [(lemma, grammemes)] in pymorphy rank order)."""
     w = _norm(word)
     m = _analyzer()
     if m is None:
-        return frozenset({w}), False
+        return frozenset({w}), False, ()
     forms = {w}
     comp = False
+    infos = []
     for p in m.parse(w):
-        forms.add(_norm(p.normal_form))
+        lemma = _norm(p.normal_form)
+        forms.add(lemma)
+        infos.append((lemma, frozenset(p.tag.grammemes)))
         if "COMP" in p.tag:
             comp = True
-    return frozenset(forms), comp
+    return frozenset(forms), comp, tuple(infos)
 
 
 def _term_lemmas(word: str) -> frozenset:
@@ -217,6 +221,83 @@ def _fallback_patterns():
 
 
 # ------------------------------------------------------------------- matching
+# --- context / tag filters (false-positive suppression) ---------------------
+_ADJ = {"ADJF", "PRTF"}
+# term -> allowed POS of the matching parse; the token is also rejected when
+# its top-ranked parse is a NOUN ("данные" = data, not "данный").
+_ADJ_ONLY_NOT_NOUN = {"данный", "указанный", "соответствующий"}
+_STOP_AFTER_RESULT = {"сохранения", "ok", "error", "200", "201"}
+_NUM_RE = re.compile(r"^\d+$")
+
+
+def _parse_ok(term, cls, infos, lemmas_j):
+    """Which parses of a token may match this lexicon term."""
+    ps = [(l, g) for l, g in infos if l in lemmas_j]
+    t = _norm(term)
+    if cls != "comparative" and ps:
+        # comparative forms ("больше" -> "большой") belong to the comparative class
+        ps = [(l, g) for l, g in ps if "COMP" not in g]
+        if not ps:
+            return False
+    if t in _ADJ_ONLY_NOT_NOUN:
+        for l, g in infos:
+            if g & _ADJ and l in lemmas_j:
+                return True
+            if "NOUN" in g:  # a noun reading outranks the adjective one
+                return False
+        return False
+    if t == "простой":
+        return any(g & {"ADJF", "ADJS"} for _, g in ps)
+    if cls == "superlative":
+        # "лучший"/"наилучший" share the lemma "хороший": only true
+        # superlative forms (Supr tag) count, a plain "хороший" does not
+        return any(l != "хороший" or "Supr" in g for l, g in ps)
+    if cls == "subjective" and t in ("хороший", "хорошо"):
+        # "лучше"/"лучший" are comparative/superlative, not plain "хороший"
+        return any(not (g & {"Supr", "COMP"}) for _, g in ps)
+    return True  # incl. words matched only by surface form
+
+
+def _has(tok, gram, pos=None):
+    return any(gram in g and (pos is None or pos in g) for _, g in tok[2][2])
+
+
+def _ctx_ok(term, cls, toks, i, n, low, text):
+    """Context rules; i..i+n-1 is the matched token range."""
+    t = _norm(term)
+    if t == "простой":
+        if i > 0 and "время" in toks[i - 1][2][0]:
+            return False
+        if i + n < len(toks) and toks[i + n][2][0] & {"система", "сервис"}:
+            return False
+    if t == "результат":
+        if text.lstrip().startswith("|"):
+            return False
+        for k in range(i + n, min(i + n + 2, len(toks))):
+            if low[toks[k][0]:toks[k][1]] in _STOP_AFTER_RESULT:
+                return False
+    return True
+
+
+def _comp_has_baseline(toks, i, low):
+    """Comparative with an explicit baseline is not vague."""
+    if i + 1 < len(toks):
+        nxt = toks[i + 1]
+        w = low[nxt[0]:nxt[1]]
+        if _NUM_RE.match(w) or w == "чем":
+            return True
+        if _has(nxt, "gent", "NOUN"):
+            return True
+        # "ниже нового порога": genitive adjective + genitive noun
+        if _has(nxt, "gent", "ADJF") and i + 2 < len(toks) and _has(toks[i + 2], "gent", "NOUN"):
+            return True
+    # "равной порогу или выше": baseline stands before "или"/"либо"
+    if i >= 2 and low[toks[i - 1][0]:toks[i - 1][1]] in ("или", "либо") \
+            and (_has(toks[i - 2], "datv", "NOUN") or _has(toks[i - 2], "gent", "NOUN")):
+        return True
+    return False
+
+
 def _hit(term, cls, text, s, e):
     return {"term": term, "class": cls, "match": text[s:e], "start": s, "end": e}
 
@@ -230,8 +311,10 @@ def _candidates_morph(text: str, low: str):
     listed = {}
     for t in WEAK_TERMS["comparative"]:
         listed[_norm(t)] = t
-    for s, e, (forms, comp) in toks:
+    for ti, (s, e, (forms, comp, _inf)) in enumerate(toks):
         if comp:
+            if _comp_has_baseline(toks, ti, low):
+                continue
             word = low[s:e]
             term = listed.get(word)
             if term is None:
@@ -247,13 +330,14 @@ def _candidates_morph(text: str, low: str):
         for i in range(len(toks) - n + 1):
             ok = True
             for j in range(n):
-                if not (toks[i + j][2][0] & lemmas[j]):
+                if not (toks[i + j][2][0] & lemmas[j]) or not _parse_ok(
+                        term, cls, toks[i + j][2][2], lemmas[j]):
                     ok = False
                     break
                 if j and _GAP_STOP.search(low[toks[i + j - 1][1]:toks[i + j][0]]):
                     ok = False
                     break
-            if ok:
+            if ok and _ctx_ok(term, cls, toks, i, n, low, text):
                 cands.append((toks[i][0], toks[i + n - 1][1], term, cls))
 
     for term, cls, rx in raw_terms:
