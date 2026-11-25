@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1080" viewBox="0 0 1600 1080" font-family="DejaVu Sans, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .t{font-size:20px;font-weight:700;fill:#0f172a}
+      .s{font-size:15px;fill:#334155}
+      .f{font-size:13px;fill:#64748b;font-family:DejaVu Sans Mono, monospace}
+      .h{font-size:30px;font-weight:700;fill:#0f172a}
+      .st{font-size:14px;font-weight:700;fill:#ffffff}
+      .code{fill:#ecfdf5;stroke:#059669;stroke-width:2}
+      .llm{fill:#eff6ff;stroke:#2563eb;stroke-width:2}
+      .io{fill:#fff7ed;stroke:#ea580c;stroke-width:2}
+      .inf{fill:#f8fafc;stroke:#64748b;stroke-width:2;stroke-dasharray:6 4}
+      .ln{stroke:#475569;stroke-width:2;fill:none}
+      .dl{stroke:#64748b;stroke-width:1.6;fill:none;stroke-dasharray:5 4}
+    </style>
+  </defs>
+  <rect width="1600" height="1080" fill="#ffffff"/>
+  <text x="40" y="52" class="h">AI Requirements Validator — архитектура</text>
+  <text x="40" y="80" class="s">python -m validator &lt;вход&gt; &lt;отчёт.md&gt;  ·  ISO/IEC/IEEE 29148:2018 (5.2.5, 5.2.6) и IEEE 830-1998 (4.3)  ·  Gemini API</text>
+
+  <!-- legend -->
+  <rect x="1120" y="30" width="22" height="16" rx="3" class="code"/><text x="1150" y="44" class="s">код (детерминированно)</text>
+  <rect x="1120" y="56" width="22" height="16" rx="3" class="llm"/><text x="1150" y="70" class="s">вызов LLM (Gemini)</text>
+  <rect x="1360" y="30" width="22" height="16" rx="3" class="io"/><text x="1390" y="44" class="s">вход / выход</text>
+  <rect x="1360" y="56" width="22" height="16" rx="3" class="inf"/><text x="1390" y="70" class="s">инфраструктура</text>
+
+  <!-- row 1: input & reading -->
+  <rect x="40" y="120" width="250" height="110" rx="12" class="io"/>
+  <text x="60" y="152" class="t">Документ</text>
+  <text x="60" y="178" class="s">.md · .txt · .pdf · .docx</text>
+  <text x="60" y="202" class="f">docs/requirements.md</text>
+
+  <rect x="350" y="120" width="330" height="110" rx="12" class="code"/>
+  <text x="370" y="152" class="t">Чтение и нумерация</text>
+  <text x="370" y="178" class="s">PDF: pypdf; скан → OCR Tesseract (rus)</text>
+  <text x="370" y="202" class="f">reader.py → Document(L1…Ln, page)</text>
+
+  <rect x="740" y="120" width="390" height="110" rx="12" class="code"/>
+  <rect x="740" y="120" width="96" height="26" rx="12" fill="#059669"/><text x="752" y="138" class="st">Этап 1а</text>
+  <text x="760" y="172" class="t">Нарезка без LLM</text>
+  <text x="760" y="196" class="s">списки, шаги, таблицы, абзацы, ID «Ф-1»</text>
+  <text x="760" y="218" class="f">segmenter.py → кандидаты C-001…</text>
+
+  <rect x="1190" y="120" width="370" height="110" rx="12" class="llm"/>
+  <rect x="1190" y="120" width="96" height="26" rx="12" fill="#2563eb"/><text x="1202" y="138" class="st">Этап 1б</text>
+  <text x="1210" y="172" class="t">Отбор требований</text>
+  <text x="1210" y="196" class="s">требование? тип, краткая формулировка</text>
+  <text x="1210" y="218" class="f">→ R-01…R-NN, цитата и строка из текста</text>
+
+  <path d="M290,175 H344" class="ln" marker-end="url(#a)"/>
+  <path d="M680,175 H734" class="ln" marker-end="url(#a)"/>
+  <path d="M1130,175 H1184" class="ln" marker-end="url(#a)"/>
+
+  <!-- row 2: per requirement -->
+  <path d="M1375,230 V268 H215 V300" class="ln" marker-end="url(#a)"/>
+
+  <rect x="40" y="306" width="350" height="120" rx="12" class="code"/>
+  <text x="60" y="340" class="t">Индикаторы риска</text>
+  <text x="60" y="366" class="s">12 классов (29148 5.2.7, INCOSE)</text>
+  <text x="60" y="390" class="s">поиск по леммам: pymorphy3</text>
+  <text x="60" y="412" class="f">lexicon.py → подсказки</text>
+
+  <rect x="450" y="306" width="520" height="120" rx="12" class="llm"/>
+  <rect x="450" y="306" width="80" height="26" rx="12" fill="#2563eb"/><text x="462" y="324" class="st">Этап 2</text>
+  <text x="470" y="358" class="t">Проверка каждого требования</text>
+  <text x="470" y="384" class="s">10 характеристик: однозначность, проверяемость, …</text>
+  <text x="470" y="408" class="s">пакеты по 8; пропущенные — повторный запрос</text>
+
+  <rect x="1030" y="306" width="530" height="120" rx="12" class="code"/>
+  <text x="1050" y="340" class="t">Проверка цитат</text>
+  <text x="1050" y="366" class="s">нормализация + нечёткий поиск по окну слов</text>
+  <text x="1050" y="390" class="s">нет цитаты → замечание отброшено и посчитано</text>
+  <text x="1050" y="412" class="f">citations.py → строка / страница PDF</text>
+
+  <path d="M390,366 H444" class="ln" marker-end="url(#a)"/>
+  <path d="M970,366 H1024" class="ln" marker-end="url(#a)"/>
+
+  <!-- row 3: set level -->
+  <path d="M1295,426 V462 H215 V494" class="ln" marker-end="url(#a)"/>
+
+  <rect x="40" y="500" width="350" height="140" rx="12" class="code"/>
+  <text x="60" y="534" class="t">Пары-кандидаты</text>
+  <text x="60" y="560" class="s">общие понятия: порог, месяц,</text>
+  <text x="60" y="584" class="s">коды ответа, HTTP-метод, карта</text>
+  <text x="60" y="608" class="s">+ правило прослеживаемости</text>
+  <text x="60" y="628" class="f">(ID &lt; 80 % → нарушение 830 4.3.8)</text>
+
+  <rect x="450" y="500" width="520" height="140" rx="12" class="llm"/>
+  <rect x="450" y="500" width="80" height="26" rx="12" fill="#2563eb"/><text x="462" y="518" class="st">Этап 3</text>
+  <text x="470" y="552" class="t">Проверка набора (29148 5.2.6)</text>
+  <text x="470" y="578" class="s">противоречия: две дословные цитаты</text>
+  <text x="470" y="602" class="s">пробелы, структура, ранжирование</text>
+  <text x="470" y="624" class="s">без повторов замечаний этапа 2</text>
+
+  <rect x="1030" y="500" width="530" height="140" rx="12" class="llm"/>
+  <rect x="1030" y="500" width="92" height="26" rx="12" fill="#2563eb"/><text x="1042" y="518" class="st">Этап 3б</text>
+  <text x="1050" y="552" class="t">Матрица покрытия</text>
+  <text x="1050" y="578" class="s">требование ↔ критерии приёмки</text>
+  <text x="1050" y="602" class="s">непокрытое условие → пробел + готовая</text>
+  <text x="1050" y="624" class="s">строка критерия приёмки</text>
+
+  <path d="M390,570 H444" class="ln" marker-end="url(#a)"/>
+  <path d="M970,570 H1024" class="ln" marker-end="url(#a)"/>
+
+  <!-- row 4: verdict & report -->
+  <path d="M1295,640 V676 H215 V708" class="ln" marker-end="url(#a)"/>
+
+  <rect x="40" y="714" width="350" height="130" rx="12" class="code"/>
+  <rect x="40" y="714" width="80" height="26" rx="12" fill="#059669"/><text x="52" y="732" class="st">Этап 4</text>
+  <text x="60" y="766" class="t">Решение</text>
+  <text x="60" y="792" class="s">критичных = 0 → можно</text>
+  <text x="60" y="816" class="s">начинать разработку и тесты</text>
+
+  <rect x="450" y="714" width="520" height="130" rx="12" class="llm"/>
+  <text x="470" y="752" class="t">Обоснование вердикта</text>
+  <text x="470" y="778" class="s">summary + «что исправить первым»</text>
+  <text x="470" y="802" class="s">(без ответа модели — текст по правилам)</text>
+
+  <rect x="1030" y="714" width="530" height="130" rx="12" class="io"/>
+  <text x="1050" y="748" class="t">Отчёт на русском (6 разделов)</text>
+  <text x="1050" y="774" class="s">паспорт · таблица требований · проверка каждого</text>
+  <text x="1050" y="798" class="s">· набор · итог · вердикт; критерии в единой форме</text>
+  <text x="1050" y="822" class="f">report.py + criteria.py → reports/report.md</text>
+
+  <path d="M390,779 H444" class="ln" marker-end="url(#a)"/>
+  <path d="M970,779 H1024" class="ln" marker-end="url(#a)"/>
+
+  <!-- infrastructure -->
+  <rect x="40" y="890" width="1520" height="160" rx="14" class="inf"/>
+  <text x="60" y="922" class="t">Инфраструктура вызовов LLM</text>
+  <text x="440" y="922" class="s">все этапы с LLM (1б, 2, 3, 3б, обоснование вердикта) вызывают модель через кэш и клиент</text>
+
+  <rect x="60" y="940" width="440" height="94" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="78" y="968" class="t" style="font-size:17px">cache.py — кэш ответов</text>
+  <text x="78" y="992" class="s">.cache/llm, ключ = sha256(модель+промт+схема)</text>
+  <text x="78" y="1014" class="s">повторный прогон не тратит квоту</text>
+
+  <rect x="540" y="940" width="520" height="94" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="558" y="968" class="t" style="font-size:17px">llm.py — GeminiClient</text>
+  <text x="558" y="992" class="s">JSON-схема ответа · таймаут 180 с · повторы 429/5xx</text>
+  <text x="558" y="1014" class="s">503/404 → запасная модель; лог времени вызова</text>
+
+  <rect x="1100" y="940" width="440" height="94" rx="10" fill="#ffffff" stroke="#64748b" stroke-width="1.5"/>
+  <text x="1118" y="968" class="t" style="font-size:17px">Gemini API (AI Studio)</text>
+  <text x="1118" y="992" class="s">gemini-3.6-flash → 3.5-flash → 3.8-flash</text>
+  <text x="1118" y="1014" class="f">ключ: GEMINI_API_KEY в .env</text>
+
+  <path d="M500,987 H534" class="ln" marker-end="url(#a)"/>
+  <path d="M1060,987 H1094" class="ln" marker-end="url(#a)"/>
+
+</svg>
