@@ -77,6 +77,9 @@ def main(argv: list[str] | None = None, client=None) -> int:
             agent_version=_agent_version(),
         )
         report = run(document, client, passport)
+        used = getattr(client, "used_models", None)
+        if used:  # the model that really answered (fallbacks included)
+            report.passport.model = ", ".join(used)
     except (FileNotFoundError, ValueError) as exc:
         _log(f"Ошибка: {exc}")
         return 2

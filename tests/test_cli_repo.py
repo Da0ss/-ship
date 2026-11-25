@@ -83,7 +83,7 @@ def test_readme_has_required_parts():
     assert ".env" in text and "GEMINI_API_KEY" in text
     assert "python -m validator docs/requirements.md reports/report.md" in text
     assert "reports/report.md" in text
-    assert "gemini-2.5-flash" in text
+    assert "gemini-3.6-flash" in text
 
 
 @pytest.mark.skipif(not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")),

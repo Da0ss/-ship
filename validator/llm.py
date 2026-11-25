@@ -9,7 +9,9 @@ import sys
 import time
 from typing import Any
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+DEFAULT_MODEL = "gemini-3.6-flash"
+DEFAULT_FALLBACKS = "gemini-3.5-flash,gemini-3.8-flash"
+SWITCH_AFTER = 2  # 503/404 attempts on one model before the switch to a fallback model
 MAX_RETRIES = 6
 BACKOFF_START = 5.0
 BACKOFF_CAP = 60.0
@@ -45,6 +47,9 @@ class GeminiClient:
                 "(или GOOGLE_API_KEY), например через файл .env. Подробности см. в README."
             )
         self.model = model or os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
+        fallbacks = os.environ.get("GEMINI_FALLBACK_MODELS", DEFAULT_FALLBACKS)
+        self.fallbacks = [m.strip() for m in fallbacks.split(",") if m.strip() and m.strip() != self.model]
+        self.used_models: list[str] = []
         try:
             self.min_interval = float(os.environ.get("GEMINI_MIN_INTERVAL", "4"))
         except ValueError:
@@ -101,16 +106,28 @@ class GeminiClient:
             cfg["response_schema"] = schema
         config = t.GenerateContentConfig(**cfg)
         delay = BACKOFF_START
+        failures_on_model = 0
         for attempt in range(MAX_RETRIES + 1):
             self._throttle()
             try:
                 resp = self._client.models.generate_content(
                     model=self.model, contents=prompt, config=config)
                 self._last_call = time.monotonic()
+                if self.model not in self.used_models:
+                    self.used_models.append(self.model)
                 return resp.text
             except Exception as e:  # noqa: BLE001
                 self._last_call = time.monotonic()
-                if not self._is_retryable(e) or attempt >= MAX_RETRIES:
+                code = getattr(e, "code", None)
+                overloaded = code in (404, 503) or "UNAVAILABLE" in str(e) or "NOT_FOUND" in str(e)
+                if overloaded:
+                    failures_on_model += 1
+                    if (failures_on_model >= SWITCH_AFTER or code == 404) and self.fallbacks:
+                        old, self.model = self.model, self.fallbacks.pop(0)
+                        failures_on_model = 0
+                        _log(f"[gemini] модель {old} недоступна ({code}); переключение на {self.model}")
+                        continue
+                if not (self._is_retryable(e) or overloaded) or attempt >= MAX_RETRIES:
                     raise
                 wait = self._retry_delay(e)
                 wait = min(max(wait + 1, 1), 300) if wait is not None else delay
