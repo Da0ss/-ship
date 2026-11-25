@@ -34,6 +34,9 @@ def _violation(v: Violation, scope: str, rid: str | None = None) -> dict:
         "location2": _loc(v.location2),
         "explanation": v.explanation,
         "fix": v.fix,
+        "fix_type": v.fix_type,
+        "options": list(v.options),
+        "tag": v.tag,
         "req_ids": req_ids,
     }
 
@@ -73,6 +76,10 @@ def report_to_dict(report: Report) -> dict:
         "critic": {"ran": report.critic_ran, "adjusted": report.critic_adjusted,
                    "rejected": rejected},
         "dropped_violations": report.dropped_violations,
+        "merged_duplicates": report.merged_duplicates,
+        "checklist": {"source": report.checklist_source, "items": [{
+            "item": c.item, "status": c.status, "evidence": c.evidence, "quote": c.quote,
+            "location": _loc(c.location), "refs": list(c.refs)} for c in report.checklist]},
         "verdict": {
             "ready_for_development": vd.ready_for_development,
             "ready_for_testing": vd.ready_for_testing,

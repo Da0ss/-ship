@@ -105,6 +105,11 @@ class Violation:
     location: Location | None = None
     location2: Location | None = None
     verified: bool = False  # True when every quote is found in the document
+    # "edit": the fix follows from the document itself; "question": a business decision is needed,
+    # fix holds the question to the product owner and options holds 2–3 possible answers.
+    fix_type: str = "edit"
+    options: list[str] = field(default_factory=list)
+    tag: str | None = None  # "fintech" for bank-domain findings, "security" for ИБ findings
 
 
 @dataclass
@@ -113,6 +118,7 @@ class RequirementCheck:
     # characteristic key -> "pass" | "fail" | "n/a"
     characteristics: dict[str, str]
     violations: list[Violation]
+    see_also: list[str] = field(default_factory=list)  # owners of merged duplicate findings
 
 
 @dataclass
@@ -140,6 +146,16 @@ class Verdict:
 
 
 @dataclass
+class ChecklistItem:
+    item: str  # checklist question as in the document (or the default bank template)
+    status: str  # "yes" | "no" | "n/a"
+    evidence: str  # one sentence tied to the document
+    quote: str | None = None
+    location: Location | None = None
+    refs: list[str] = field(default_factory=list)  # report IDs of related requirements
+
+
+@dataclass
 class Report:
     passport: Passport
     requirements: list[Requirement]
@@ -151,6 +167,9 @@ class Report:
     critic_rejected: list[tuple[Violation, str]] = field(default_factory=list)
     critic_adjusted: int = 0
     critic_ran: bool = False
+    checklist: list[ChecklistItem] = field(default_factory=list)
+    checklist_source: str = ""  # "document" | "template" | "" (stage off)
+    merged_duplicates: int = 0  # findings merged by the deduplication step
 
 
 class LLMClient(Protocol):

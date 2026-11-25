@@ -93,10 +93,27 @@ class Locator:
         parts = [p for p in parts if p]
         if not parts:
             return None
+        self.last_fuzzy = None
         found = self._locate_parts(parts, hint_line)
         if found:
             return found
         return self._locate_fuzzy(" ".join(parts), hint_line)
+
+    def exact_quote(self, quote: str, loc: Location | None) -> str:
+        """The document's own words for a quote found by fuzzy search (fixes model typos)."""
+        window = getattr(self, "last_fuzzy", None)
+        if not window or loc is None:
+            return quote
+        words = " ".join(l.text for l in self.document.lines
+                         if loc.line_start <= l.no <= loc.line_end).split()
+        for i in range(len(words)):
+            for j in range(i + 1, len(words) + 1):
+                got = normalize(" ".join(words[i:j]))
+                if got == window:
+                    return " ".join(words[i:j]).strip("*`")
+                if len(got) > len(window):
+                    break
+        return quote
 
     def _locate_parts(self, parts: list[str], hint_line: int | None) -> Location | None:
         first_spans = self._occurrences(parts[0])
@@ -130,6 +147,7 @@ class Locator:
                             for m in re.finditer(r"\S+", self.text)]
         toks = self._tokens
         best: tuple[float, int, int, int] | None = None  # score, -distance, first, last
+        best_window = ""
         for size in range(max(1, n - 2), n + 3):
             for i in range(0, len(toks) - size + 1):
                 window = " ".join(t[0] for t in toks[i:i + size])
@@ -144,8 +162,10 @@ class Locator:
                 cand = (round(score, 4), dist, first, last)
                 if best is None or cand[:2] > best[:2]:
                     best = cand
+                    best_window = window
         if not best:
             return None
+        self.last_fuzzy = best_window
         return Location(best[2], best[3], self.page_of.get(best[2]))
 
     def lines_text(self, start: int, end: int) -> str:
@@ -160,6 +180,8 @@ def attach_requirement_locations(locator: Locator, reqs: list[Requirement],
     for req in reqs:
         hint = hints.get(req.rid)
         loc = locator.locate(req.quote, hint[0] if hint else None)
+        if loc is not None:
+            req.quote = locator.exact_quote(req.quote, loc)
         if loc is None and hint:
             a, b = max(1, hint[0]), min(max_line, max(hint[0], hint[1]))
             text = locator.lines_text(a, b)
@@ -182,10 +204,12 @@ def verify_violations(locator: Locator, violations: list[Violation],
     for v in violations:
         hint = next((hint_of[r] for r in v.req_ids if r in hint_of), None)
         v.location = locator.locate(v.quote, hint)
+        v.quote = locator.exact_quote(v.quote, v.location)
         ok = v.location is not None
         if v.quote2:
             hint2 = next((hint_of[r] for r in reversed(v.req_ids) if r in hint_of), None)
             v.location2 = locator.locate(v.quote2, hint2)
+            v.quote2 = locator.exact_quote(v.quote2, v.location2)
             ok = ok and v.location2 is not None
         elif v.defect == "contradiction":
             ok = False  # a contradiction needs two places in the text

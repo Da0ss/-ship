@@ -284,9 +284,44 @@ def rule_field_type_mismatch(ctx: _Ctx) -> list[Violation]:
     return out
 
 
+_SENSITIVE = re.compile(r"card|карт|pan|account|сч[её]т|iin|иин|phone|телефон|amount|сумм|limit|порог",
+                        re.I)
+_QUERY_IN_URL = re.compile(r"curl\s+-G\b|[?&][A-Za-z_]+=", re.I)
+
+
+def rule_sensitive_query(ctx: _Ctx) -> list[Violation]:
+    """Card identifiers and amounts travel in the URL (query string): they end up in access
+    logs of proxies and gateways, browser history and monitoring."""
+    url_line = next((l for l in ctx.doc.lines if _QUERY_IN_URL.search(l.text)), None)
+    if url_line is None:
+        query_head = next((l for l in ctx.doc.lines if _HEADING.match(l.text)
+                           and re.search(r"query", l.text, re.I)), None)
+        if query_head is None:
+            return []
+        url_line = query_head
+    names = []
+    for l in ctx.doc.lines:
+        m = re.match(r"^\s*\|\s*`?([A-Za-z_][A-Za-z0-9_]*)`?\s*\|", l.text)
+        if m and l.no > url_line.no - 60 and _SENSITIVE.search(l.text) and \
+                re.search(r"query", ctx.section.get(l.no, ""), re.I):
+            names.append((l.no, m.group(1)))
+    if not names and not re.search(r"card|карт", url_line.text, re.I):
+        return []
+    field_list = ", ".join(n for _, n in names) or "идентификатор карты"
+    v = _v(ctx, "gap", "major", "ISO/IEC/IEEE 29148 5.2.6 — Полнота", url_line.no,
+           f"Параметры {field_list} передаются в строке URL. URL пишется в журналы прокси, "
+           "шлюзов и мониторинга, поэтому идентификатор карты и суммы клиента попадают в логи. "
+           "Требований к маскированию и защите этих данных нет.",
+           "Передавать идентификатор карты и сумму в теле POST/PUT-запроса и добавить требование: "
+           "идентификатор карты в журналах маскируется.",
+           line2=None)
+    v.tag = "security"
+    return [v]
+
+
 RULES = [rule_undescribed_codes, rule_reason_phrase, rule_status_body_conflict,
          rule_method_semantics, rule_content_type_without_body, rule_money_units,
-         rule_field_type_mismatch]
+         rule_field_type_mismatch, rule_sensitive_query]
 
 
 def find_facts(document: Document) -> list[Violation]:

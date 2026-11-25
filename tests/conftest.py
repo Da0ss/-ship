@@ -20,7 +20,9 @@ class FakeClient:
     model = "fake-model"
 
     def __init__(self, extract=None, checks=None, set_check=None, verdict=None, coverage=None,
-                 critic=None):
+                 critic=None, domain=None, checklist=None):
+        self.domain = domain if domain is not None else {"findings": []}
+        self.checklist = checklist  # callable(items) -> dict, None = answer "no" to everything
         self.critic = critic  # callable(list of violation views) -> dict, None = confirm all
         self.coverage = coverage if coverage is not None else {"matrix": []}
         self.extract = extract if extract is not None else EXTRACT
@@ -31,6 +33,15 @@ class FakeClient:
 
     def generate_json(self, system, prompt, schema=None):
         self.calls.append((system, prompt))
+        if "банковский аналитик" in system:
+            return copy.deepcopy(self.domain)
+        if "аудитор процесса ревью" in system:
+            block = prompt.split("Пункты чек-листа:")[1].split("Подтверждённые замечания")[0]
+            items = json.loads(block)
+            if self.checklist:
+                return self.checklist(items)
+            return {"items": [{"cid": i["cid"], "status": "no", "evidence": "нет в документе",
+                               "quote": None, "refs": []} for i in items]}
         if "Код уже нарезал документ" in system:
             return classify_answer(prompt)
         if "нарезать документ" in system:

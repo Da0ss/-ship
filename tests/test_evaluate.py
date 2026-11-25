@@ -17,7 +17,7 @@ def _golden():
 def test_golden_lines_exist_in_document():
     n = len(DOC.read_text(encoding="utf-8").splitlines())
     g = _golden()
-    assert len(g["defects"]) == 24
+    assert len(g["defects"]) == 25
     for d in g["defects"]:
         assert all(1 <= x <= n for x in d["lines"]), d["id"]
 
@@ -56,7 +56,7 @@ def test_code_checks_alone_cover_part_of_golden(document, passport, tmp_path, ca
     out = capsys.readouterr().out
     result = evaluate(json.loads(path.read_text(encoding="utf-8")), _golden())
     found = {r["id"] for r in result["rows"] if r["found"]}
-    assert {"G01", "G02", "G05", "G06", "G08", "G09", "G10", "G19", "G23"} <= found
+    assert {"G01", "G02", "G05", "G06", "G08", "G09", "G10", "G19", "G23", "G25"} <= found
     assert result["precision_lower_bound"] == 1.0
-    assert "Эталон: 24 дефектов" in out
+    assert "Эталон: 25 дефектов" in out
     assert main([str(path), str(GOLDEN), "--min-recall", "0.99"]) == 1

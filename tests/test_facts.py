@@ -28,6 +28,7 @@ def test_facts_on_task_document(document):
         ("gap", 49, None),              # tiyn and tenge
         ("contradiction", 143, 156),    # amount integer vs string
         ("contradiction", 144, 157),    # enabled integer vs string
+        ("gap", 109, None),             # card id and amount in the URL query string
     ])
     for v in find_facts(document):
         assert v.verified and v.explanation.startswith(TAG) and v.fix

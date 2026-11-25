@@ -197,6 +197,9 @@ def _parse_violation(raw: Any, req_ids: list[str]) -> Violation | None:
         quote=str(raw["quote"]).strip(), quote2=quote2,
         explanation=str(raw.get("explanation", "")).strip(), fix=str(raw.get("fix", "")).strip(),
         req_ids=req_ids,
+        fix_type="question" if raw.get("fix_type") == "question" else "edit",
+        options=[str(o).strip() for o in raw.get("options") or [] if str(o).strip()][:3],
+        tag=raw.get("tag") if raw.get("tag") in ("fintech", "security") else None,
     )
 
 
@@ -638,12 +641,23 @@ def run(document: Document, client: LLMClient, passport: Passport,
     dropped2 += dropped3
     if os.environ.get("VALIDATOR_FACTS", "on").lower() != "off":
         add_fact_findings(document, reqs, checks, set_check, log)
+    from . import review
+    if review.enabled("VALIDATOR_DOMAIN"):
+        review.domain_review(document, client, locator, reqs, checks, set_check, log)
     rejected: list[tuple[Violation, str]] = []
     adjusted = 0
     critic_on = os.environ.get("VALIDATOR_CRITIC", "on").lower() != "off"
     if critic_on:
         rejected, adjusted = critic_review(document, client, checks, set_check, log)
+    questions = review.guard_invented_values(document, checks, set_check)
+    merged = review.dedupe(checks, set_check)
+    log(f"Повторы объединены: {merged}; правок с выдуманными значениями переведено в вопросы: {questions}")
     verdict = make_verdict(document, client, reqs, checks, set_check, log, len(rejected))
+    checklist, source = [], ""
+    if review.enabled("VALIDATOR_CHECKLIST"):
+        checklist, source = review.fill_checklist(document, client, locator, reqs, checks,
+                                                  set_check, log)
     return Report(passport=passport, requirements=reqs, checks=checks, set_check=set_check,
                   verdict=verdict, dropped_violations=dropped1 + dropped2,
-                  critic_rejected=rejected, critic_adjusted=adjusted, critic_ran=critic_on)
+                  critic_rejected=rejected, critic_adjusted=adjusted, critic_ran=critic_on,
+                  checklist=checklist, checklist_source=source, merged_duplicates=merged)

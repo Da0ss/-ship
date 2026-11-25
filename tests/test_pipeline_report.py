@@ -46,8 +46,8 @@ def test_full_run(document, fake, passport):
     assert report.verdict.ready_for_development is False
     assert report.verdict.ready_for_testing is False
     assert report.verdict.fix_first[0].startswith("(R-02)")
-    # Calls: extract + 1 check batch + set + coverage + critic + verdict.
-    assert len(fake.calls) == 6
+    # Calls: extract + 1 check batch + set + coverage + domain + critic + verdict + checklist.
+    assert len(fake.calls) == 8
 
 
 def test_batching_and_retry_of_skipped(document, passport):
