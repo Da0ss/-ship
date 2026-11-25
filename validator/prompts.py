@@ -175,6 +175,38 @@ API-правил) найди критерии приёмки, которые е�
 {document}
 </document>"""
 
+COVERAGE_SYSTEM = (
+    "Ты — тест-аналитик. Ты строишь матрицу покрытия требований критериями приёмки по "
+    "ISO/IEC/IEEE 29148:2018 п. 5.2.6 (полнота набора, возможность валидации).\n"
+    + COMMON_RULES
+)
+
+COVERAGE_PROMPT = """Построй матрицу покрытия.
+
+Для КАЖДОГО требования из списка "Проверяемые требования":
+1. covered_by — rid критериев приёмки, которые проверяют это требование (может быть пусто).
+2. uncovered — каждое условие требования, которое не проверяет ни один критерий приёмки.
+   Разбей требование на условия: каждое число, граница диапазона (нижняя, верхняя, вне
+   диапазона), значение по умолчанию, булево значение (вкл/выкл), исключение, особый случай
+   (возврат, смена порога, повтор события, второй push в месяце). Для каждого непокрытого
+   условия:
+   - condition — условие своими словами;
+   - quote — дословная цитата из требования, где стоит это условие (3–15 слов);
+   - fix — готовая строка критерия приёмки "исходные условия | действие | ожидаемый результат"
+     с конкретными числами;
+   - severity — critical, если без проверки нельзя принять ключевую функцию; иначе major.
+
+Критерии приёмки:
+{acceptance}
+
+Проверяемые требования:
+{requirements}
+
+Документ:
+<document>
+{document}
+</document>"""
+
 VERDICT_SYSTEM = (
     "Ты — руководитель анализа требований. Ты даёшь короткий вердикт о готовности документа "
     "к разработке и тестированию. Пиши на русском, коротко, без воды."
@@ -279,6 +311,33 @@ SET_SCHEMA: dict[str, Any] = {
         "violations": {"type": "array", "items": SET_VIOLATION_SCHEMA},
     },
     "required": ["characteristics", "violations"],
+}
+
+COVERAGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "matrix": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "rid": _str(),
+                    "covered_by": {"type": "array", "items": _str()},
+                    "uncovered": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"condition": _str(), "quote": _str(), "fix": _str(),
+                                           "severity": _str(enum=["critical", "major"])},
+                            "required": ["condition", "quote", "fix", "severity"],
+                        },
+                    },
+                },
+                "required": ["rid", "covered_by", "uncovered"],
+            },
+        }
+    },
+    "required": ["matrix"],
 }
 
 VERDICT_SCHEMA: dict[str, Any] = {

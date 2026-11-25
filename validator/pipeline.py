@@ -339,6 +339,56 @@ def _rids_at(reqs: list[Requirement], v: Violation) -> list[str]:
     return out
 
 
+# --- stage 3b: coverage matrix -----------------------------------------------------------------
+
+COVERAGE_KINDS = ("functional", "api", "nonfunctional", "integration", "data")
+
+
+def check_coverage(document: Document, client: LLMClient, locator: Locator,
+                   reqs: list[Requirement], log: Log = _log_default
+                   ) -> tuple[list[Violation], dict[str, list[str]], int]:
+    """Gaps between requirements and acceptance criteria. Returns (gaps, matrix, dropped)."""
+    acceptance = [r for r in reqs if r.kind == "acceptance"]
+    targets = [r for r in reqs if r.kind == "functional" or r.doc_id]
+    targets += [r for r in reqs if r.kind in COVERAGE_KINDS and r not in targets]
+    if not targets:
+        return [], {}, 0
+    log("Шаг 3б/4: матрица покрытия требований критериями приёмки…")
+    prompt = P.COVERAGE_PROMPT.format(
+        acceptance=P.dumps([_req_view(r) for r in acceptance]) if acceptance else "нет",
+        requirements=P.dumps([_req_view(r) for r in targets]),
+        document=document.numbered_text(),
+    )
+    data = client.generate_json(P.COVERAGE_SYSTEM, prompt, P.COVERAGE_SCHEMA)
+    rows = data.get("matrix", []) if isinstance(data, dict) else []
+    valid = {r.rid for r in targets}
+    acc_ids = {r.rid for r in acceptance}
+    matrix: dict[str, list[str]] = {}
+    gaps: list[Violation] = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("rid") not in valid:
+            continue
+        rid = row["rid"]
+        matrix[rid] = [a for a in row.get("covered_by") or [] if a in acc_ids]
+        for item in row.get("uncovered") or []:
+            if not isinstance(item, dict) or not str(item.get("quote", "")).strip():
+                continue
+            sev = item.get("severity") if item.get("severity") in ("critical", "major") else "major"
+            covered = ", ".join(matrix[rid]) or "нет"
+            gaps.append(Violation(
+                defect="gap", criterion="ISO/IEC/IEEE 29148 5.2.6 — Полнота", severity=sev,
+                quote=str(item["quote"]).strip(),
+                explanation=(f"Нет критерия приёмки для условия: {str(item.get('condition', '')).strip()}. "
+                             f"Требование покрывают критерии: {covered}."),
+                fix=f"Добавить критерий приёмки: {str(item.get('fix', '')).strip()}",
+                req_ids=[rid],
+            ))
+    line_of = {r.rid: r.location.line_start for r in reqs}
+    kept, dropped = verify_violations(locator, gaps, line_of)
+    log(f"  непокрытых условий: {len(kept)}")
+    return kept, matrix, dropped
+
+
 # --- stage 4: verdict ---------------------------------------------------------------------------
 
 def make_verdict(document: Document, client: LLMClient, reqs: list[Requirement],
@@ -385,6 +435,14 @@ def run(document: Document, client: LLMClient, passport: Passport,
         raise ValueError("Модель не выделила ни одного требования с подтверждённой цитатой.")
     checks, dropped1 = check_requirements(document, client, locator, reqs, batch_size, log)
     set_check, dropped2 = check_set(document, client, locator, reqs, checks, log)
+    gaps, _matrix, dropped3 = check_coverage(document, client, locator, reqs, log)
+    for g in gaps:
+        if not any(_same(g, o) for o in set_check.violations):
+            set_check.violations.append(g)
+    if gaps:
+        set_check.characteristics["complete"] = "fail"
+        set_check.characteristics["able_to_be_validated"] = "fail"
+    dropped2 += dropped3
     verdict = make_verdict(document, client, reqs, checks, set_check, log)
     return Report(passport=passport, requirements=reqs, checks=checks, set_check=set_check,
                   verdict=verdict, dropped_violations=dropped1 + dropped2)

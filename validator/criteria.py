@@ -60,6 +60,8 @@ def normalize_criterion(raw: str, defect: str, scope: str = "req") -> str:
         standard = _ISO
 
     name = _characteristic(raw, defect)
+    if name in ("Ранжирование", "Модифицируемость", "Корректность") and standard == _ISO:
+        standard = _IEEE  # these characteristics exist only in IEEE 830 4.3
     if standard == _ISO:
         m = _ISO_CLAUSE_RE.search(raw)
         clause = m.group(0) if m else ("5.2.6" if scope == "set" else "5.2.5")

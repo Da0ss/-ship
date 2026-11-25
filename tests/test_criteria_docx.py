@@ -21,6 +21,8 @@ from validator.reader import read_document
      "ISO/IEC/IEEE 29148 5.2.5 — Однозначность"),
     ("", "unverifiable", "req", "ISO/IEC/IEEE 29148 5.2.5 — Проверяемость"),
     ("Traceability", "traceability", "set", "ISO/IEC/IEEE 29148 5.2.6 — Прослеживаемость"),
+    ("ISO/IEC/IEEE 29148 5.2.6 — Ранжирование", "other", "set", "IEEE 830 4.3.5 — Ранжирование"),
+    ("ISO/IEC/IEEE 29148 5.2.5 — Корректность", "other", "req", "IEEE 830 4.3.1 — Корректность"),
 ])
 def test_normalize_criterion(raw, defect, scope, expected):
     assert normalize_criterion(raw, defect, scope) == expected

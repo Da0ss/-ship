@@ -46,8 +46,8 @@ def test_full_run(document, fake, passport):
     assert report.verdict.ready_for_development is False
     assert report.verdict.ready_for_testing is False
     assert report.verdict.fix_first[0].startswith("(R-02)")
-    # Calls: extract + 1 check batch + set + verdict.
-    assert len(fake.calls) == 4
+    # Calls: extract + 1 check batch + set + coverage + verdict.
+    assert len(fake.calls) == 5
 
 
 def test_batching_and_retry_of_skipped(document, passport):
@@ -156,3 +156,18 @@ def test_set_prompt_has_coverage_and_stats(document, fake, passport):
     assert "Матрица покрытия" in set_prompt
     assert "R-05 (строка 64)" in set_prompt
     assert '"share_with_id": 0.43' in set_prompt
+
+
+def test_coverage_matrix(document, passport):
+    from tests.conftest import COVERAGE
+    client = FakeClient(coverage=COVERAGE)
+    report = pipeline.run(document, client, passport, log=lambda m: None)
+    gaps = [v for v in report.set_check.violations if "Нет критерия приёмки" in v.explanation]
+    assert [(g.req_ids, g.location.line_start, g.severity) for g in gaps] == [
+        (["R-01"], 37, "major"), (["R-03"], 39, "critical")]
+    assert gaps[0].fix.startswith("Добавить критерий приёмки: Порог 999")
+    assert "покрывают критерии: R-05." in gaps[0].explanation  # unknown R-99 removed
+    assert report.set_check.characteristics["able_to_be_validated"] == "fail"
+    assert report.dropped_violations == 3  # 2 from the default script + 1 invented coverage quote
+    prompt = next(p for s, p in client.calls if "тест-аналитик" in s)
+    assert '"rid": "R-05"' in prompt.split("Проверяемые требования:")[0]  # acceptance list

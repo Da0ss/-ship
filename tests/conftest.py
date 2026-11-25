@@ -19,7 +19,8 @@ class FakeClient:
 
     model = "fake-model"
 
-    def __init__(self, extract=None, checks=None, set_check=None, verdict=None):
+    def __init__(self, extract=None, checks=None, set_check=None, verdict=None, coverage=None):
+        self.coverage = coverage if coverage is not None else {"matrix": []}
         self.extract = extract if extract is not None else EXTRACT
         self.checks = checks  # callable(rids) -> dict, or None for default
         self.set_check = set_check if set_check is not None else SET
@@ -36,6 +37,8 @@ class FakeClient:
             return self.checks(rids) if self.checks else default_checks(rids)
         if "набор требований целиком" in system:
             return copy.deepcopy(self.set_check)
+        if "тест-аналитик" in system:
+            return copy.deepcopy(self.coverage)
         if "вердикт" in system:
             if isinstance(self.verdict, Exception):
                 raise self.verdict
@@ -154,3 +157,20 @@ def passport():
 @pytest.fixture
 def fake():
     return FakeClient()
+
+
+COVERAGE = {"matrix": [
+    {"rid": "R-01", "covered_by": ["R-05", "R-99"], "uncovered": [
+        {"condition": "нижняя граница 1 000 ₸", "quote": "от 1 000 до 1 000 000 ₸ включительно",
+         "fix": "Порог 999 ₸ | Сохранить | Ошибка «Проверьте сумму»", "severity": "major"},
+        {"condition": "выдумка", "quote": "лимит 5 000 000 ₸ для VIP", "fix": "x",
+         "severity": "critical"},
+    ]},
+    {"rid": "R-03", "covered_by": [], "uncovered": [
+        {"condition": "второй push в месяце", "quote": "максимум один такой push",
+         "fix": "Push уже был | Достичь порога снова | Push нет", "severity": "critical"},
+    ]},
+    {"rid": "R-77", "covered_by": [], "uncovered": [
+        {"condition": "чужой rid", "quote": "Тело не используется", "fix": "x", "severity": "major"},
+    ]},
+]}
