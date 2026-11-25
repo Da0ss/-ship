@@ -71,3 +71,17 @@ def test_missing_key(monkeypatch):
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     with pytest.raises(RuntimeError):
         llm.GeminiClient()
+
+
+def test_timeout_is_passed_to_sdk(monkeypatch):
+    monkeypatch.setenv("GEMINI_TIMEOUT", "42")
+    c = llm.GeminiClient(model="m1", api_key="dummy")
+    assert c.timeout_s == 42.0
+    assert c._client._api_client._http_options.timeout == 42000
+
+
+def test_timeout_error_is_retried(monkeypatch):
+    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "")
+    c, calls = make_client(monkeypatch, {"m1": [TimeoutError("read timeout"), '{"ok": 1}']})
+    assert c.generate_json("s", "p") == {"ok": 1}
+    assert calls == ["m1", "m1"]

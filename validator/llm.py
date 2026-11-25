@@ -58,7 +58,13 @@ class GeminiClient:
         from google.genai import types
 
         self._types = types
-        self._client = genai.Client(api_key=key)
+        try:
+            self.timeout_s = float(os.environ.get("GEMINI_TIMEOUT", "180"))
+        except ValueError:
+            self.timeout_s = 180.0
+        # Without a timeout one hung request blocks the whole run.
+        self._client = genai.Client(
+            api_key=key, http_options=types.HttpOptions(timeout=int(self.timeout_s * 1000)))
         self._last_call = 0.0
 
     # --- внутренние помощники ---
@@ -110,12 +116,16 @@ class GeminiClient:
         for attempt in range(MAX_RETRIES + 1):
             self._throttle()
             try:
+                started = time.monotonic()
                 resp = self._client.models.generate_content(
                     model=self.model, contents=prompt, config=config)
                 self._last_call = time.monotonic()
                 if self.model not in self.used_models:
                     self.used_models.append(self.model)
-                return resp.text
+                text = resp.text
+                _log(f"[gemini] {self.model}: ответ за {time.monotonic() - started:.0f} с, "
+                     f"{len(text or '')} символов")
+                return text
             except Exception as e:  # noqa: BLE001
                 self._last_call = time.monotonic()
                 code = getattr(e, "code", None)
