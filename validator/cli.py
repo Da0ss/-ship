@@ -41,6 +41,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("--env-file", default=".env", help="файл с переменными окружения (по умолчанию .env)")
     p.add_argument("--no-cache", action="store_true",
                    help="не использовать кэш ответов модели (.cache/llm)")
+    p.add_argument("--json", dest="json_path", default=None, metavar="PATH",
+                   help="дополнительно записать отчёт в машиночитаемом JSON")
     return p
 
 
@@ -97,5 +99,9 @@ def main(argv: list[str] | None = None, client=None) -> int:
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(render(report), encoding="utf-8")
+    if args.json_path:
+        from .export import write_json
+        write_json(report, args.json_path)
+        _log(f"JSON: {args.json_path}")
     _log(f"Готово. Отчёт: {out_path}")
     return 0

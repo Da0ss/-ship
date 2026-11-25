@@ -451,6 +451,41 @@ def check_coverage(document: Document, client: LLMClient, locator: Locator,
     return kept, matrix, dropped
 
 
+# --- stage 3c: deterministic fact checks -----------------------------------------------------
+
+def _group(defect: str) -> str:
+    """Defect kinds that describe one problem from two angles count as one for de-duplication."""
+    return "conflict" if defect in ("contradiction", "other") else defect
+
+
+def _overlaps_any(v: Violation, o: Violation) -> bool:
+    return any(_overlap(a, b) for a in (v.location, v.location2) if a
+               for b in (o.location, o.location2) if b)
+
+
+def add_fact_findings(document: Document, reqs: list[Requirement], checks: list[RequirementCheck],
+                      set_check: SetCheck, log: Log = _log_default) -> int:
+    """Add code-found contradictions and gaps (validator/facts.py) that the LLM missed."""
+    from .facts import find_facts
+
+    existing = [v for c in checks for v in c.violations] + set_check.violations
+    added = 0
+    for f in find_facts(document):
+        # Same kind of problem at the same place is already reported by the LLM.
+        if any(_group(o.defect) == _group(f.defect) and _overlaps_any(f, o) for o in existing):
+            continue
+        f.req_ids = _rids_at(reqs, f)
+        set_check.violations.append(f)
+        existing.append(f)
+        added += 1
+        if f.defect == "contradiction":
+            set_check.characteristics["consistent"] = "fail"
+        elif f.defect == "gap":
+            set_check.characteristics["complete"] = "fail"
+    log(f"Проверки кодом: добавлено замечаний {added}")
+    return added
+
+
 # --- stage 3c: critic ------------------------------------------------------------------------
 
 def _violation_view(vid: str, v: Violation) -> dict[str, Any]:
@@ -601,6 +636,8 @@ def run(document: Document, client: LLMClient, passport: Passport,
         set_check.characteristics["complete"] = "fail"
         set_check.characteristics["able_to_be_validated"] = "fail"
     dropped2 += dropped3
+    if os.environ.get("VALIDATOR_FACTS", "on").lower() != "off":
+        add_fact_findings(document, reqs, checks, set_check, log)
     rejected: list[tuple[Violation, str]] = []
     adjusted = 0
     critic_on = os.environ.get("VALIDATOR_CRITIC", "on").lower() != "off"

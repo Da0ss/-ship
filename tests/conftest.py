@@ -170,6 +170,10 @@ def classify_answer(prompt):
 @pytest.fixture(autouse=True)
 def llm_segmenter_mode(monkeypatch, request):
     """Old tests use the LLM extraction mode; tests marked 'segmenter' use the code segmenter."""
+    if "facts" not in request.keywords:
+        monkeypatch.setenv("VALIDATOR_FACTS", "off")
+    else:
+        monkeypatch.delenv("VALIDATOR_FACTS", raising=False)
     if "segmenter" not in request.keywords:
         monkeypatch.setenv("VALIDATOR_SEGMENTER", "off")
     else:

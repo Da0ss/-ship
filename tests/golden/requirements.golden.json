@@ -1,0 +1,323 @@
+{
+ "document": "docs/requirements.md",
+ "note": "Эталон известных дефектов. Строки — номера строк файла. Не входит в отчёт агента.",
+ "defects": [
+  {
+   "id": "G01",
+   "title": "GET для операции сохранения",
+   "severity": "critical",
+   "defects": [
+    "contradiction",
+    "other"
+   ],
+   "lines": [
+    103,
+    104,
+    109,
+    120
+   ]
+  },
+  {
+   "id": "G02",
+   "title": "Раздел 403 говорит, что возвращается 404",
+   "severity": "critical",
+   "defects": [
+    "contradiction",
+    "other",
+    "gap"
+   ],
+   "lines": [
+    175,
+    188,
+    189
+   ]
+  },
+  {
+   "id": "G03",
+   "title": "Месяц: дата совершения покупки против даты проведения в критерии приёмки",
+   "severity": "critical",
+   "defects": [
+    "contradiction",
+    "ambiguity"
+   ],
+   "lines": [
+    38,
+    64
+   ]
+  },
+  {
+   "id": "G04",
+   "title": "Один push в месяц против push «независимо от истории» после смены порога",
+   "severity": "critical",
+   "defects": [
+    "contradiction",
+    "ambiguity"
+   ],
+   "lines": [
+    39,
+    40
+   ]
+  },
+  {
+   "id": "G05",
+   "title": "Статус 200 назван Created",
+   "severity": "major",
+   "defects": [
+    "other",
+    "contradiction",
+    "ambiguity"
+   ],
+   "lines": [
+    165
+   ]
+  },
+  {
+   "id": "G06",
+   "title": "Content-Type application/json при отсутствии тела",
+   "severity": "major",
+   "defects": [
+    "contradiction",
+    "other"
+   ],
+   "lines": [
+    147,
+    148
+   ]
+  },
+  {
+   "id": "G07",
+   "title": "Неверная сумма: 200 с ERROR против 400 для неверных параметров",
+   "severity": "critical",
+   "defects": [
+    "contradiction",
+    "ambiguity",
+    "other"
+   ],
+   "lines": [
+    121,
+    163,
+    169,
+    170,
+    171
+   ]
+  },
+  {
+   "id": "G08",
+   "title": "Код 201 указан как успешный, но не описан",
+   "severity": "major",
+   "defects": [
+    "gap",
+    "ambiguity",
+    "other",
+    "contradiction"
+   ],
+   "lines": [
+    151
+   ]
+  },
+  {
+   "id": "G09",
+   "title": "Код 404 не описан в разделе статусов",
+   "severity": "major",
+   "defects": [
+    "gap",
+    "contradiction",
+    "other"
+   ],
+   "lines": [
+    189,
+    190
+   ]
+  },
+  {
+   "id": "G10",
+   "title": "Суммы в тиынах и порог в тенге без правила пересчёта",
+   "severity": "major",
+   "defects": [
+    "gap",
+    "ambiguity",
+    "contradiction"
+   ],
+   "lines": [
+    49
+   ]
+  },
+  {
+   "id": "G11",
+   "title": "Последние 4 цифры карты против идентификатора карты cardId",
+   "severity": "major",
+   "defects": [
+    "gap",
+    "contradiction",
+    "ambiguity"
+   ],
+   "lines": [
+    43,
+    142
+   ]
+  },
+  {
+   "id": "G12",
+   "title": "«В течение минуты»: нет точки отсчёта и условий измерения",
+   "severity": "major",
+   "defects": [
+    "unverifiable",
+    "ambiguity"
+   ],
+   "lines": [
+    46
+   ]
+  },
+  {
+   "id": "G13",
+   "title": "Не задан Prod URL",
+   "severity": "major",
+   "defects": [
+    "gap"
+   ],
+   "lines": [
+    108
+   ]
+  },
+  {
+   "id": "G14",
+   "title": "Не заполнены версия и дата документа",
+   "severity": "minor",
+   "defects": [
+    "gap",
+    "traceability",
+    "other"
+   ],
+   "lines": [
+    68,
+    85
+   ]
+  },
+  {
+   "id": "G15",
+   "title": "Раздел тестирования не заполнен",
+   "severity": "major",
+   "defects": [
+    "gap"
+   ],
+   "lines": [
+    56,
+    57
+   ]
+  },
+  {
+   "id": "G16",
+   "title": "Блок согласующих пуст",
+   "severity": "minor",
+   "defects": [
+    "gap",
+    "other"
+   ],
+   "lines": [
+    87,
+    89,
+    91
+   ]
+  },
+  {
+   "id": "G17",
+   "title": "Нет критериев приёмки для границ, значения по умолчанию, отключения",
+   "severity": "major",
+   "defects": [
+    "gap"
+   ],
+   "lines": [
+    37,
+    59,
+    61
+   ]
+  },
+  {
+   "id": "G18",
+   "title": "Description: «Сохранение порога» против «чтение порога»",
+   "severity": "major",
+   "defects": [
+    "ambiguity",
+    "contradiction",
+    "other"
+   ],
+   "lines": [
+    103
+   ]
+  },
+  {
+   "id": "G19",
+   "title": "Тип полей amount/enabled: integer в запросе, string в ответе",
+   "severity": "major",
+   "defects": [
+    "contradiction",
+    "other",
+    "ambiguity"
+   ],
+   "lines": [
+    143,
+    144,
+    156,
+    157
+   ]
+  },
+  {
+   "id": "G20",
+   "title": "Возврат: не описан возврат после push и в другом месяце",
+   "severity": "major",
+   "defects": [
+    "gap",
+    "ambiguity"
+   ],
+   "lines": [
+    38
+   ]
+  },
+  {
+   "id": "G21",
+   "title": "Повторная доставка: не задан ключ идемпотентности",
+   "severity": "major",
+   "defects": [
+    "gap",
+    "ambiguity"
+   ],
+   "lines": [
+    52
+   ]
+  },
+  {
+   "id": "G22",
+   "title": "Проектные решения в требованиях (архитектура, UI, sequence)",
+   "severity": "minor",
+   "defects": [
+    "design"
+   ],
+   "lines": [
+    26,
+    29,
+    43
+   ]
+  },
+  {
+   "id": "G23",
+   "title": "У большинства требований нет идентификаторов",
+   "severity": "major",
+   "defects": [
+    "traceability"
+   ],
+   "lines": []
+  },
+  {
+   "id": "G24",
+   "title": "Текст сообщения об ошибке ввода не задан",
+   "severity": "minor",
+   "defects": [
+    "ambiguity",
+    "gap"
+   ],
+   "lines": [
+    29
+   ]
+  }
+ ]
+}
