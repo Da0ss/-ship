@@ -39,6 +39,8 @@ def _parser() -> argparse.ArgumentParser:
     p.add_argument("output", help="путь к итоговому отчёту .md")
     p.add_argument("--model", default=None, help="модель Gemini (переопределяет GEMINI_MODEL)")
     p.add_argument("--env-file", default=".env", help="файл с переменными окружения (по умолчанию .env)")
+    p.add_argument("--no-cache", action="store_true",
+                   help="не использовать кэш ответов модели (.cache/llm)")
     return p
 
 
@@ -61,6 +63,9 @@ def main(argv: list[str] | None = None, client=None) -> int:
             return 2
         from .llm import GeminiClient
         client = GeminiClient(model=args.model)
+        if not args.no_cache:
+            from .cache import CachingClient
+            client = CachingClient(client)
 
     from .reader import read_document
     from .pipeline import run
