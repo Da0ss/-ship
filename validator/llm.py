@@ -195,7 +195,7 @@ def _env_float(names: list[str], default: float) -> float:
 
 
 class OpenAICompatClient:
-    """Any OpenAI-compatible Chat Completions API (OpenAI, OpenRouter, vLLM, vyceai.com...)."""
+    """Any OpenAI-compatible Chat Completions API (OpenAI, OpenRouter, vLLM...)."""
 
     def __init__(self, model: str | None = None, api_key: str | None = None,
                  base_url: str | None = None):

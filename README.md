@@ -102,7 +102,7 @@ python -m validator docs/requirements.md reports/report.md --json reports/report
 
 ## Другой провайдер LLM (OpenAI-совместимый)
 
-Используйте его, если нет ключа Gemini или нужна другая модель. Подходит любой API Chat Completions: OpenAI, OpenRouter, vyceai.com, локальный vLLM. Для хакатона по умолчанию остаётся Gemini.
+Используйте его, если нет ключа Gemini или нужна другая модель. Подходит любой API Chat Completions: OpenAI, OpenRouter, локальный vLLM. Для хакатона по умолчанию остаётся Gemini.
 
 Задайте переменные в `.env`:
 
@@ -113,12 +113,12 @@ python -m validator docs/requirements.md reports/report.md --json reports/report
 - `OPENAI_FALLBACK_MODELS` — запасные модели через запятую.
 - `LLM_MIN_INTERVAL` и `LLM_TIMEOUT` — пауза между запросами и таймаут, секунды (иначе берутся `GEMINI_MIN_INTERVAL` и `GEMINI_TIMEOUT`).
 
-Пример для vyceai.com:
+Пример для OpenRouter:
 
 ```
 LLM_PROVIDER=openai
 OPENAI_API_KEY=<ваш ключ>
-OPENAI_BASE_URL=https://vyceai.com/v1
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
 OPENAI_MODEL=<модель из GET /v1/models>
 ```
 
