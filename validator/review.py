@@ -156,8 +156,10 @@ def domain_review(document: Document, client: LLMClient, locator: Locator,
     known = {r.rid for r in reqs}
     added = 0
     for v in kept:
-        if any(_group(o.defect) == _group(v.defect) and _overlap(v, o)
-               and o.defect == v.defect for o in existing):
+        # Only an exact repeat is skipped here: a bank finding often cites the same line as an
+        # ISO finding but names another risk. Real repeats are left to the critic.
+        if any(o.defect == v.defect and o.quote == v.quote and o.quote2 == v.quote2
+               for o in existing):
             continue
         ids = [r for r in v.req_ids if r in known] or _rids_at(reqs, v)
         v.req_ids = ids
@@ -168,7 +170,7 @@ def domain_review(document: Document, client: LLMClient, locator: Locator,
             set_check.characteristics["complete"] = "fail"
         elif v.defect == "contradiction":
             set_check.characteristics["consistent"] = "fail"
-    log(f"  банковских замечаний: {added} (без цитаты отброшено: {dropped})")
+    log(f"  модель вернула: {len(raw)}; добавлено: {added}; без цитаты отброшено: {dropped}")
     return added
 
 

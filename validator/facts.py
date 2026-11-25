@@ -319,9 +319,32 @@ def rule_sensitive_query(ctx: _Ctx) -> list[Violation]:
     return [v]
 
 
+_PLACEHOLDER = re.compile(r"^(?:заполня\w*|будет\s+(?:добавлен|описан|заполнен)\w*|tbd|todo|to be "
+                          r"defined|n/?a|—|-|\.\.\.|…|позже|в разработке|не заполнен\w*)\b", re.I)
+
+
+def rule_placeholder_sections(ctx: _Ctx) -> list[Violation]:
+    """A section whose whole body is a template stub ('заполняются тестировщиками', 'TBD')."""
+    out = []
+    heads = [l.no for l in ctx.doc.lines if l.no in ctx.heading_lines]
+    for i, h in enumerate(heads):
+        end = heads[i + 1] if i + 1 < len(heads) else len(ctx.doc.lines) + 1
+        body = [l for l in ctx.doc.lines if h < l.no < end and l.text.strip()]
+        if len(body) == 1 and _PLACEHOLDER.match(_clean(body[0].text)) and \
+                len(_clean(body[0].text).split()) <= 6:
+            title = _clean(ctx.text[h])
+            out.append(_v(ctx, "gap", "major", "ISO/IEC/IEEE 29148 5.2.6 — Полнота", body[0].no,
+                          f"Раздел «{title}» содержит только заглушку вместо требований. Нечего "
+                          "проверять и не на что опереться при приёмке.",
+                          f"Заполнить раздел «{title}» до передачи документа в разработку или "
+                          "явно указать, что раздел не требуется, и почему."))
+    return out
+
+
 RULES = [rule_undescribed_codes, rule_reason_phrase, rule_status_body_conflict,
          rule_method_semantics, rule_content_type_without_body, rule_money_units,
-         rule_field_type_mismatch, rule_sensitive_query]
+         rule_field_type_mismatch, rule_sensitive_query,
+         rule_placeholder_sections]
 
 
 def find_facts(document: Document) -> list[Violation]:
