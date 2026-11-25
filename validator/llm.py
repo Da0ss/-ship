@@ -12,7 +12,7 @@ from typing import Any
 DEFAULT_MODEL = "gemini-3.6-flash"
 DEFAULT_FALLBACKS = "gemini-3.8-flash"
 SWITCH_AFTER = 2  # 503/404 attempts on one model before the switch to a fallback model
-MAX_RETRIES = 6
+MAX_RETRIES = 12
 BACKOFF_START = 5.0
 BACKOFF_CAP = 60.0
 
@@ -149,8 +149,14 @@ class GeminiClient:
                     failures_on_model += 1
                     if (failures_on_model >= SWITCH_AFTER or code == 404) and self.fallbacks:
                         old, self.model = self.model, self.fallbacks.pop(0)
+                        if code != 404 and "NOT_FOUND" not in str(e):
+                            # Overload is temporary: keep the model in the ring and come back later.
+                            self.fallbacks.append(old)
                         failures_on_model = 0
-                        _log(f"[gemini] модель {old} недоступна ({code}); переключение на {self.model}")
+                        _log(f"[gemini] модель {old} перегружена или недоступна ({code}); "
+                             f"переключение на {self.model}")
+                        time.sleep(min(delay, BACKOFF_CAP) / 2)
+                        delay = min(delay * 1.5, BACKOFF_CAP)
                         continue
                 if not (self._is_retryable(e) or overloaded) or attempt >= MAX_RETRIES:
                     raise

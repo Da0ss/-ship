@@ -98,3 +98,11 @@ def test_daily_quota_switches_without_waiting(monkeypatch):
 def test_per_minute_429_is_not_daily():
     assert not llm._daily_quota(ApiError(429, "RESOURCE_EXHAUSTED PerMinute retry in 3s"))
     assert llm._daily_quota(ApiError(429, "RESOURCE_EXHAUSTED requests per day"))
+
+
+def test_overload_rotates_back_to_first_model(monkeypatch):
+    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "m2")
+    busy = ApiError(503, "UNAVAILABLE high demand")
+    c, calls = make_client(monkeypatch, {"m1": [busy, busy, '{"ok": 1}'], "m2": [busy, busy]})
+    assert c.generate_json("s", "p") == {"ok": 1}
+    assert calls == ["m1", "m1", "m2", "m2", "m1"]
