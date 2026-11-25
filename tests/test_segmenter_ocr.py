@@ -135,3 +135,25 @@ def test_lexicon_hits(text, cls, match):
 def test_lexicon_no_false_hits(text):
     from validator.lexicon import find_weak_terms
     assert find_weak_terms(text) == []
+
+
+def test_passport_ocr_row(document, fake, passport):
+    from validator.report import render
+    report = pipeline.run(document, fake, passport, log=lambda m: None)
+    assert "| OCR | не применялся |" in render(report)
+    report.passport.ocr_pages = [1, 3]
+    assert "| OCR | страницы 1, 3 (распознаны Tesseract) |" in render(report)
+
+
+def test_cli_passes_ocr_pages(tmp_path, monkeypatch):
+    from validator import cli
+    path = tmp_path / "scan.pdf"
+    _scan_pdf(path)
+    pytest.importorskip("pytesseract")
+    import shutil
+    if not shutil.which("tesseract"):
+        pytest.skip("нет tesseract")
+    out = tmp_path / "r.md"
+    assert cli.main([str(path), str(out), "--env-file", str(tmp_path / "n")],
+                    client=FakeClient()) == 0
+    assert "| OCR | страницы 1 (распознаны Tesseract) |" in out.read_text(encoding="utf-8")

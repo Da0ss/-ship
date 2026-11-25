@@ -100,6 +100,10 @@ def render(report: Report) -> str:
     for k, val in (("Документ", p.document), ("Название", p.document_title), ("Дата", p.date),
                    ("Модель", p.model), ("Версия агента", p.agent_version)):
         out.append(f"| {k} | {_cell(val)} |")
+    ocr_pages = getattr(p, "ocr_pages", None) or []
+    ocr = (f"страницы {', '.join(str(n) for n in ocr_pages)} (распознаны Tesseract)"
+           if ocr_pages else "не применялся")
+    out.append(f"| OCR | {_cell(ocr)} |")
     out.append("")
 
     # 2

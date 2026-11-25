@@ -80,6 +80,7 @@ def main(argv: list[str] | None = None, client=None) -> int:
             date=datetime.now().astimezone().isoformat(timespec="seconds"),
             model=client.model,
             agent_version=_agent_version(),
+            ocr_pages=list(getattr(document, "ocr_pages", []) or []),
         )
         report = run(document, client, passport)
         used = getattr(client, "used_models", None)

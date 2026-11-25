@@ -128,6 +128,7 @@ class Passport:
     date: str  # ISO date-time
     model: str
     agent_version: str  # git commit or tag
+    ocr_pages: list[int] = field(default_factory=list)  # PDF pages read via OCR
 
 
 @dataclass
