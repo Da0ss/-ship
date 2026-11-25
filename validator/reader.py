@@ -109,9 +109,11 @@ def _layout_pages(path: str) -> list[list[str]] | None:
             for t in tables:
                 rows = [[" ".join(str(c or "").split()).replace("|", "\\|") for c in r]
                         for r in t.extract()]
-                rows = [r for r in rows if any(r)]
-                if not rows:
+                filled = [r for r in rows if any(r)]
+                if not filled:
                     continue
+                # Keep one empty row of a table that has only a header (an unfilled sign-off form).
+                rows = filled + [[""] * len(filled[0])] if len(filled) == 1 and len(rows) > 1 else filled
                 md = ["| " + " | ".join(rows[0]) + " |"]
                 if len(rows) > 1:
                     md.append("|" + "---|" * len(rows[0]))

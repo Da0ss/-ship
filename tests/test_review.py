@@ -110,3 +110,23 @@ def test_fast_client_runs_light_stages(document, passport):
     assert any("строгий ревьюер" in s for s in strong_stages)
     assert any("независимый критик" in s for s in strong_stages)
     assert not any("строгий ревьюер" in s for s in fast_stages)
+
+
+def test_held_fact_comes_back_when_llm_twin_is_gone():
+    from validator.facts import TAG
+    fact = _v("contradiction", 143, 157)
+    fact.explanation = f"{TAG} типы различаются"
+    s = SetCheck({"consistent": "pass"}, [])
+    assert pipeline.restore_held_facts([fact], [], s) == 1
+    assert s.violations == [fact] and s.characteristics["consistent"] == "fail"
+    twin = _v("contradiction", 143, 157)
+    s2 = SetCheck({}, [twin])
+    assert pipeline.restore_held_facts([fact], [], s2) == 0
+
+
+def test_bank_finding_not_merged_into_iso_finding():
+    iso = _v("gap", 38)
+    bank = _v("gap", 38)
+    bank.tag = "fintech"
+    s = SetCheck({}, [iso, bank])
+    assert review.dedupe([], s) == 0 and len(s.violations) == 2

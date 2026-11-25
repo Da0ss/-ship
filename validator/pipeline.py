@@ -10,6 +10,7 @@ from typing import Any
 
 from . import prompts as P
 from .citations import Locator, attach_requirement_locations, normalize, verify_violations
+from .facts import TAG as FACT_TAG
 from .models import (
     DEFECT_TYPES, REQ_CHARACTERISTICS, SET_CHARACTERISTICS, SEVERITIES, Document, LLMClient,
     Passport, Report, Requirement, RequirementCheck, SetCheck, Verdict, Violation,
@@ -467,8 +468,11 @@ def _overlaps_any(v: Violation, o: Violation) -> bool:
 
 
 def add_fact_findings(document: Document, reqs: list[Requirement], checks: list[RequirementCheck],
-                      set_check: SetCheck, log: Log = _log_default) -> int:
-    """Add code-found contradictions and gaps (validator/facts.py) that the LLM missed."""
+                      set_check: SetCheck, log: Log = _log_default,
+                      held: list[Violation] | None = None) -> int:
+    """Add code-found contradictions and gaps (validator/facts.py) that the LLM missed.
+    A fact already reported by the LLM goes to `held`: if the critic later rejects the LLM
+    finding, restore_held_facts() puts the fact back (code facts are not dropped by the critic)."""
     from .facts import find_facts
 
     existing = [v for c in checks for v in c.violations] + set_check.violations
@@ -476,6 +480,9 @@ def add_fact_findings(document: Document, reqs: list[Requirement], checks: list[
     for f in find_facts(document):
         # Same kind of problem at the same place is already reported by the LLM.
         if any(_group(o.defect) == _group(f.defect) and _overlaps_any(f, o) for o in existing):
+            if held is not None:
+                f.req_ids = _rids_at(reqs, f)
+                held.append(f)
             continue
         f.req_ids = _rids_at(reqs, f)
         set_check.violations.append(f)
@@ -487,6 +494,23 @@ def add_fact_findings(document: Document, reqs: list[Requirement], checks: list[
             set_check.characteristics["complete"] = "fail"
     log(f"Проверки кодом: добавлено замечаний {added}")
     return added
+
+
+def restore_held_facts(held: list[Violation], checks: list[RequirementCheck],
+                       set_check: SetCheck) -> int:
+    """Put back code facts whose LLM twin did not survive the critic."""
+    remaining = [v for c in checks for v in c.violations] + set_check.violations
+    restored = 0
+    for f in held:
+        if not any(_group(o.defect) == _group(f.defect) and _overlaps_any(f, o) for o in remaining):
+            set_check.violations.append(f)
+            remaining.append(f)
+            restored += 1
+            if f.defect == "contradiction":
+                set_check.characteristics["consistent"] = "fail"
+            elif f.defect == "gap":
+                set_check.characteristics["complete"] = "fail"
+    return restored
 
 
 # --- stage 3c: critic ------------------------------------------------------------------------
@@ -532,6 +556,8 @@ def critic_review(document: Document, client: LLMClient, checks: list[Requiremen
     for vid, v, owner in items:
         d = decisions.get(vid, {})
         dup = d.get("duplicate_of")
+        if v.explanation.startswith(FACT_TAG):
+            continue  # deterministic code facts: the critic may adjust them, not drop them
         if d.get("decision") == "reject" or (dup in vids and dup != vid):
             reason = str(d.get("reason") or "").strip()
             if dup in vids and dup != vid:
@@ -644,8 +670,9 @@ def run(document: Document, client: LLMClient, passport: Passport,
         set_check.characteristics["complete"] = "fail"
         set_check.characteristics["able_to_be_validated"] = "fail"
     dropped2 += dropped3
+    held: list[Violation] = []
     if os.environ.get("VALIDATOR_FACTS", "on").lower() != "off":
-        add_fact_findings(document, reqs, checks, set_check, log)
+        add_fact_findings(document, reqs, checks, set_check, log, held)
     from . import review
     if review.enabled("VALIDATOR_DOMAIN"):
         review.domain_review(document, client, locator, reqs, checks, set_check, log)
@@ -654,6 +681,9 @@ def run(document: Document, client: LLMClient, passport: Passport,
     critic_on = os.environ.get("VALIDATOR_CRITIC", "on").lower() != "off"
     if critic_on:
         rejected, adjusted = critic_review(document, client, checks, set_check, log)
+    back = restore_held_facts(held, checks, set_check)
+    if back:
+        log(f"Проверки кодом: возвращено замечаний после критика {back}")
     questions = review.guard_invented_values(document, checks, set_check)
     merged = review.dedupe(checks, set_check)
     log(f"Повторы объединены: {merged}; правок с выдуманными значениями переведено в вопросы: {questions}")

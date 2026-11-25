@@ -341,10 +341,37 @@ def rule_placeholder_sections(ctx: _Ctx) -> list[Violation]:
     return out
 
 
+def rule_empty_tables(ctx: _Ctx) -> list[Violation]:
+    """A table under a heading whose data rows are all empty (approvers, sign-off, versions)."""
+    out = []
+    lines = ctx.doc.lines
+    i = 0
+    while i < len(lines):
+        if not lines[i].text.strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].text.strip().startswith("|"):
+            j += 1
+        rows = [l for l in lines[i:j]
+                if not (re.fullmatch(r"[\s|:\-]+", l.text) and "-" in l.text)]
+        data = rows[1:]
+        if data and all(not re.sub(r"[\s|]", "", l.text) for l in data):
+            head_no = next((h for h in sorted(ctx.heading_lines, reverse=True)
+                            if h < lines[i].no), rows[0].no)
+            title = _clean(ctx.text[head_no])
+            out.append(_v(ctx, "gap", "minor", "ISO/IEC/IEEE 29148 5.2.6 — Полнота",
+                          head_no,
+                          f"Таблица «{title}» не заполнена: строки пустые.",
+                          f"Заполнить таблицу «{title}» до передачи документа в работу."))
+        i = j
+    return out
+
+
 RULES = [rule_undescribed_codes, rule_reason_phrase, rule_status_body_conflict,
          rule_method_semantics, rule_content_type_without_body, rule_money_units,
          rule_field_type_mismatch, rule_sensitive_query,
-         rule_placeholder_sections]
+         rule_placeholder_sections, rule_empty_tables]
 
 
 def find_facts(document: Document) -> list[Violation]:

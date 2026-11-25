@@ -30,6 +30,7 @@ def test_facts_on_task_document(document):
         ("contradiction", 144, 157),    # enabled integer vs string
         ("gap", 109, None),             # card id and amount in the URL query string
         ("gap", 57, None),              # "заполняются тестировщиками" stub section
+        ("gap", 87, None),              # empty approvers table
     ])
     for v in find_facts(document):
         assert v.verified and v.explanation.startswith(TAG) and v.fix

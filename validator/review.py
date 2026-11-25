@@ -336,7 +336,8 @@ def _pair(v: Violation) -> tuple | None:
         return None
     a = v.location.line_start
     b = v.location2.line_start if v.location2 else None
-    return (v.defect, tuple(sorted(x for x in (a, b) if x is not None)))
+    # A bank/ИБ risk and an ISO finding on the same line are different findings: keep both.
+    return (v.defect, v.tag or "", tuple(sorted(x for x in (a, b) if x is not None)))
 
 
 def dedupe(checks: list[RequirementCheck], set_check: SetCheck) -> int:
