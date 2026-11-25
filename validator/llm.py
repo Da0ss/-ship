@@ -10,7 +10,7 @@ import time
 from typing import Any
 
 DEFAULT_MODEL = "gemini-3.6-flash"
-DEFAULT_FALLBACKS = "gemini-3.5-flash,gemini-3.8-flash"
+DEFAULT_FALLBACKS = "gemini-3.8-flash"
 SWITCH_AFTER = 2  # 503/404 attempts on one model before the switch to a fallback model
 MAX_RETRIES = 6
 BACKOFF_START = 5.0
@@ -38,8 +38,16 @@ def _parse_json(text: str | None) -> Any:
         return json.loads(_strip_fences(text))
 
 
+def _daily_quota(exc: Exception) -> bool:
+    """429 because the per-day quota of this model is used up: waiting will not help today."""
+    text = str(exc)
+    return ("429" in text or "RESOURCE_EXHAUSTED" in text) and bool(
+        re.search(r"per[_ ]?day|PerDay|requests_per_day|RPD|daily", text, re.I))
+
+
 class GeminiClient:
-    def __init__(self, model: str | None = None, api_key: str | None = None):
+    def __init__(self, model: str | None = None, api_key: str | None = None,
+                 fallbacks: str | None = None, min_interval: float | None = None):
         key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         if not key:
             raise RuntimeError(
@@ -47,13 +55,15 @@ class GeminiClient:
                 "(или GOOGLE_API_KEY), например через файл .env. Подробности см. в README."
             )
         self.model = model or os.environ.get("GEMINI_MODEL") or DEFAULT_MODEL
-        fallbacks = os.environ.get("GEMINI_FALLBACK_MODELS", DEFAULT_FALLBACKS)
+        if fallbacks is None:
+            fallbacks = os.environ.get("GEMINI_FALLBACK_MODELS", DEFAULT_FALLBACKS)
         self.fallbacks = [m.strip() for m in fallbacks.split(",") if m.strip() and m.strip() != self.model]
         self.used_models: list[str] = []
         try:
-            self.min_interval = float(os.environ.get("GEMINI_MIN_INTERVAL", "4"))
+            self.min_interval = (min_interval if min_interval is not None
+                                 else float(os.environ.get("GEMINI_MIN_INTERVAL", "13")))
         except ValueError:
-            self.min_interval = 4.0
+            self.min_interval = 13.0
         from google import genai
         from google.genai import types
 
@@ -129,6 +139,11 @@ class GeminiClient:
             except Exception as e:  # noqa: BLE001
                 self._last_call = time.monotonic()
                 code = getattr(e, "code", None)
+                if _daily_quota(e) and self.fallbacks:
+                    old, self.model = self.model, self.fallbacks.pop(0)
+                    failures_on_model = 0
+                    _log(f"[gemini] дневная квота {old} исчерпана; переключение на {self.model}")
+                    continue
                 overloaded = code in (404, 503) or "UNAVAILABLE" in str(e) or "NOT_FOUND" in str(e)
                 if overloaded:
                     failures_on_model += 1
@@ -276,6 +291,10 @@ class OpenAICompatClient:
                     continue
                 model_problem = code == 404 or (code == 403 and any(
                     k in low for k in ("model", "verified", "not found")))
+                if code == 429 and _daily_quota(e) and self.fallbacks:
+                    old, self.model = self.model, self.fallbacks.pop(0)
+                    _log(f"[llm] дневная квота {old} исчерпана; переключение на {self.model}")
+                    continue
                 if code == 503:
                     unavailable += 1
                 if (model_problem or unavailable >= SWITCH_AFTER) and self.fallbacks:
@@ -306,6 +325,41 @@ class OpenAICompatClient:
             return _extract_json_block(text)
         except ValueError as e:
             raise RuntimeError(f"Модель дважды вернула некорректный JSON: {e}") from e
+
+
+def make_fast_client():
+    """Optional second client for light stages (classification, verdict, checklist).
+    Set VALIDATOR_FAST_MODEL (and VALIDATOR_FAST_FALLBACKS) to save the quota of the strong model.
+    Returns None when not configured."""
+    fast = (os.environ.get("VALIDATOR_FAST_MODEL") or "").strip()
+    if not fast:
+        return None
+    provider = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+    fb = os.environ.get("VALIDATOR_FAST_FALLBACKS", "")
+    try:
+        interval = float(os.environ.get("VALIDATOR_FAST_MIN_INTERVAL", "4.5"))
+    except ValueError:
+        interval = 4.5
+    if provider == "openai":
+        c = OpenAICompatClient(model=fast)
+        c.fallbacks = [m.strip() for m in fb.split(",") if m.strip() and m.strip() != fast]
+        return c
+    return GeminiClient(model=fast, fallbacks=fb, min_interval=interval)
+
+
+def list_gemini_models() -> list[tuple[str, str]]:
+    """(model id, display name) of Gemini models that can generate text with this key."""
+    from google import genai
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    client = genai.Client(api_key=key)
+    out = []
+    for m in client.models.list():
+        actions = getattr(m, "supported_actions", None) or []
+        if actions and "generateContent" not in actions:
+            continue
+        name = (m.name or "").removeprefix("models/")
+        out.append((name, getattr(m, "display_name", "") or ""))
+    return sorted(out)
 
 
 def make_client(model: str | None = None):

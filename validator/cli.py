@@ -35,8 +35,10 @@ def _agent_version() -> str:
 def _parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m validator",
                                 description="Проверка документа требований по ISO/IEC/IEEE 29148 и IEEE 830.")
-    p.add_argument("input", help="путь к файлу с требованиями")
-    p.add_argument("output", help="путь к итоговому отчёту .md")
+    p.add_argument("input", nargs="?", help="путь к файлу с требованиями")
+    p.add_argument("output", nargs="?", help="путь к итоговому отчёту .md")
+    p.add_argument("--list-models", action="store_true",
+                   help="показать модели Gemini, доступные этому ключу, и выйти")
     p.add_argument("--model", default=None, help="модель (переопределяет GEMINI_MODEL / OPENAI_MODEL)")
     p.add_argument("--provider", choices=["gemini", "openai"], default=None,
                    help="провайдер LLM (переопределяет LLM_PROVIDER; по умолчанию gemini)")
@@ -48,7 +50,7 @@ def _parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: list[str] | None = None, client=None) -> int:
+def main(argv: list[str] | None = None, client=None, fast_client=None) -> int:
     args = _parser().parse_args(argv)
     try:
         from dotenv import load_dotenv
@@ -56,6 +58,18 @@ def main(argv: list[str] | None = None, client=None) -> int:
     except ImportError:
         pass
 
+    if args.list_models:
+        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+            _log("Ошибка: не задан GEMINI_API_KEY (см. README).")
+            return 2
+        from .llm import list_gemini_models
+        for mid, name in list_gemini_models():
+            print(f"{mid:40} {name}")
+        return 0
+    if not args.input or not args.output:
+        _parser().print_usage(sys.stderr)
+        _log("Ошибка: укажите путь к файлу требований и путь к отчёту.")
+        return 2
     if not os.path.isfile(args.input):
         _log(f"Ошибка: файл не найден: {args.input}")
         return 2
@@ -79,9 +93,17 @@ def main(argv: list[str] | None = None, client=None) -> int:
         except RuntimeError as exc:
             _log(f"Ошибка: {exc}")
             return 2
+        from .llm import make_fast_client
+        try:
+            fast_client = make_fast_client()
+        except RuntimeError as exc:
+            _log(f"Ошибка: {exc}")
+            return 2
         if not args.no_cache:
             from .cache import CachingClient
             client = CachingClient(client)
+            if fast_client is not None:
+                fast_client = CachingClient(fast_client)
 
     from .reader import read_document
     from .pipeline import run
@@ -98,10 +120,13 @@ def main(argv: list[str] | None = None, client=None) -> int:
             agent_version=_agent_version(),
             ocr_pages=list(getattr(document, "ocr_pages", []) or []),
         )
-        report = run(document, client, passport)
+        report = run(document, client, passport, fast_client=fast_client)
         used = getattr(client, "used_models", None)
         if used:  # the model that really answered (fallbacks included)
             report.passport.model = ", ".join(used)
+        fast_used = getattr(fast_client, "used_models", None) if fast_client else None
+        if fast_used:
+            report.passport.model += f"; лёгкие этапы: {', '.join(fast_used)}"
     except (FileNotFoundError, ValueError) as exc:
         _log(f"Ошибка: {exc}")
         return 2

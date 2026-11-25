@@ -501,7 +501,7 @@ def _violation_view(vid: str, v: Violation) -> dict[str, Any]:
 
 
 def critic_review(document: Document, client: LLMClient, checks: list[RequirementCheck],
-                  set_check: SetCheck, log: Log = _log_default, batch_size: int = 30
+                  set_check: SetCheck, log: Log = _log_default, batch_size: int = 60
                   ) -> tuple[list[tuple[Violation, str]], int]:
     """Second opinion on every finding. Returns (rejected with reasons, number adjusted).
     Changes checks and set_check in place."""
@@ -620,13 +620,18 @@ def make_verdict(document: Document, client: LLMClient, reqs: list[Requirement],
 # --- entry point --------------------------------------------------------------------------------
 
 def run(document: Document, client: LLMClient, passport: Passport,
-        log: Log = _log_default, batch_size: int | None = None) -> Report:
-    batch_size = batch_size or _int(os.environ.get("VALIDATOR_BATCH_SIZE"), 8) or 8
+        log: Log = _log_default, batch_size: int | None = None,
+        fast_client: LLMClient | None = None) -> Report:
+    """fast_client (optional) runs the light stages: classification of fragments, verdict text,
+    review checklist. The strong client keeps the checks, set check, coverage, bank review,
+    critic. This saves the small daily quota of strong free-tier models."""
+    fast = fast_client or client
+    batch_size = batch_size or _int(os.environ.get("VALIDATOR_BATCH_SIZE"), 15) or 15
     locator = Locator(document)
     if os.environ.get("VALIDATOR_SEGMENTER", "on").lower() == "off":
         reqs = extract_requirements(document, client, locator, log)
     else:
-        reqs = classify_candidates(document, client, log)
+        reqs = classify_candidates(document, fast, log)
     if not reqs:
         raise ValueError("Модель не выделила ни одного требования с подтверждённой цитатой.")
     checks, dropped1 = check_requirements(document, client, locator, reqs, batch_size, log)
@@ -652,10 +657,10 @@ def run(document: Document, client: LLMClient, passport: Passport,
     questions = review.guard_invented_values(document, checks, set_check)
     merged = review.dedupe(checks, set_check)
     log(f"Повторы объединены: {merged}; правок с выдуманными значениями переведено в вопросы: {questions}")
-    verdict = make_verdict(document, client, reqs, checks, set_check, log, len(rejected))
+    verdict = make_verdict(document, fast, reqs, checks, set_check, log, len(rejected))
     checklist, source = [], ""
     if review.enabled("VALIDATOR_CHECKLIST"):
-        checklist, source = review.fill_checklist(document, client, locator, reqs, checks,
+        checklist, source = review.fill_checklist(document, fast, locator, reqs, checks,
                                                   set_check, log)
     return Report(passport=passport, requirements=reqs, checks=checks, set_check=set_check,
                   verdict=verdict, dropped_violations=dropped1 + dropped2,

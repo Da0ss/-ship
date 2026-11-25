@@ -85,3 +85,16 @@ def test_timeout_error_is_retried(monkeypatch):
     c, calls = make_client(monkeypatch, {"m1": [TimeoutError("read timeout"), '{"ok": 1}']})
     assert c.generate_json("s", "p") == {"ok": 1}
     assert calls == ["m1", "m1"]
+
+
+def test_daily_quota_switches_without_waiting(monkeypatch):
+    monkeypatch.setenv("GEMINI_FALLBACK_MODELS", "m2")
+    err = ApiError(429, "RESOURCE_EXHAUSTED quota_id: GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+    c, calls = make_client(monkeypatch, {"m1": [err], "m2": ['{"ok": 1}']})
+    assert c.generate_json("s", "p") == {"ok": 1}
+    assert calls == ["m1", "m2"]
+
+
+def test_per_minute_429_is_not_daily():
+    assert not llm._daily_quota(ApiError(429, "RESOURCE_EXHAUSTED PerMinute retry in 3s"))
+    assert llm._daily_quota(ApiError(429, "RESOURCE_EXHAUSTED requests per day"))

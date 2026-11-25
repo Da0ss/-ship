@@ -1,3 +1,5 @@
+import pytest
+
 from tests.conftest import FakeClient
 from validator import pipeline, review
 from validator.citations import Locator
@@ -94,3 +96,17 @@ def test_stages_can_be_switched_off(document, passport, monkeypatch):
     report = pipeline.run(document, fake, passport, log=lambda m: None)
     assert not report.checklist and "## 7." not in render(report)
     assert not any("банковский аналитик" in s for s, _ in fake.calls)
+
+
+@pytest.mark.segmenter
+def test_fast_client_runs_light_stages(document, passport):
+    strong, fast = FakeClient(), FakeClient()
+    pipeline.run(document, strong, passport, log=lambda m: None, fast_client=fast)
+    fast_stages = [s for s, _ in fast.calls]
+    strong_stages = [s for s, _ in strong.calls]
+    assert any("Код уже нарезал документ" in s for s in fast_stages)
+    assert any("аудитор процесса ревью" in s for s in fast_stages)
+    assert any("вердикт" in s for s in fast_stages)
+    assert any("строгий ревьюер" in s for s in strong_stages)
+    assert any("независимый критик" in s for s in strong_stages)
+    assert not any("строгий ревьюер" in s for s in fast_stages)
