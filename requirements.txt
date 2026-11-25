@@ -8,3 +8,4 @@ pymorphy3-dicts-ru>=2.4
 pypdfium2>=4.30
 Pillow>=10.0
 pytesseract>=0.3.13
+openai>=1.40

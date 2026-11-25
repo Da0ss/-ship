@@ -37,7 +37,9 @@ def _parser() -> argparse.ArgumentParser:
                                 description="Проверка документа требований по ISO/IEC/IEEE 29148 и IEEE 830.")
     p.add_argument("input", help="путь к файлу с требованиями")
     p.add_argument("output", help="путь к итоговому отчёту .md")
-    p.add_argument("--model", default=None, help="модель Gemini (переопределяет GEMINI_MODEL)")
+    p.add_argument("--model", default=None, help="модель (переопределяет GEMINI_MODEL / OPENAI_MODEL)")
+    p.add_argument("--provider", choices=["gemini", "openai"], default=None,
+                   help="провайдер LLM (переопределяет LLM_PROVIDER; по умолчанию gemini)")
     p.add_argument("--env-file", default=".env", help="файл с переменными окружения (по умолчанию .env)")
     p.add_argument("--no-cache", action="store_true",
                    help="не использовать кэш ответов модели (.cache/llm)")
@@ -59,12 +61,24 @@ def main(argv: list[str] | None = None, client=None) -> int:
         return 2
 
     if client is None:
-        if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+        if args.provider:
+            os.environ["LLM_PROVIDER"] = args.provider
+        provider = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+        if provider == "openai":
+            if not os.environ.get("OPENAI_API_KEY"):
+                _log("Ошибка: не задан OPENAI_API_KEY. Впишите ключ в .env или задайте переменную "
+                     "окружения (см. README, раздел про OpenAI-совместимый провайдер).")
+                return 2
+        elif not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
             _log("Ошибка: не задан GEMINI_API_KEY. Скопируйте .env.example в .env и впишите ключ "
                  "(https://aistudio.google.com/apikey) или задайте переменную окружения.")
             return 2
-        from .llm import GeminiClient
-        client = GeminiClient(model=args.model)
+        from .llm import make_client
+        try:
+            client = make_client(model=args.model)
+        except RuntimeError as exc:
+            _log(f"Ошибка: {exc}")
+            return 2
         if not args.no_cache:
             from .cache import CachingClient
             client = CachingClient(client)

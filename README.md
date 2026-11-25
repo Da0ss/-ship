@@ -73,7 +73,7 @@ Windows:
 
 Агент хранит ответы LLM в `.cache/llm`. Повторный прогон того же документа той же версией агента не тратит квоту. Отключение кэша: `--no-cache`. Каталог кэша задаёт `VALIDATOR_CACHE_DIR`.
 
-Требуется Python 3.10 или новее.
+Требуется Python 3.11 или новее (google-genai 3.x).
 
 ## Запуск
 
@@ -99,6 +99,30 @@ python -m validator docs/requirements.md reports/report.md --json reports/report
 ## Выбор модели
 
 По умолчанию используется `gemini-3.6-flash`: бесплатный тариф, JSON-режим со схемой, длинный контекст. `gemini-2.5-flash` закрыта для новых ключей (404). При ответе 503 или 404 агент переключается на запасные модели из `GEMINI_FALLBACK_MODELS` (по умолчанию `gemini-3.5-flash,gemini-3.8-flash`). В паспорте отчёта стоят модели, которые реально ответили. Смените модель переменной `GEMINI_MODEL` или параметром `--model`.
+
+## Другой провайдер LLM (OpenAI-совместимый)
+
+Используйте его, если нет ключа Gemini или нужна другая модель. Подходит любой API Chat Completions: OpenAI, OpenRouter, vyceai.com, локальный vLLM. Для хакатона по умолчанию остаётся Gemini.
+
+Задайте переменные в `.env`:
+
+- `LLM_PROVIDER=openai` — выбор провайдера (или параметр `--provider openai`).
+- `OPENAI_API_KEY` — ключ (обязательно).
+- `OPENAI_BASE_URL` — адрес API (по умолчанию `https://api.openai.com/v1`).
+- `OPENAI_MODEL` — модель (обязательно, либо параметр `--model`).
+- `OPENAI_FALLBACK_MODELS` — запасные модели через запятую.
+- `LLM_MIN_INTERVAL` и `LLM_TIMEOUT` — пауза между запросами и таймаут, секунды (иначе берутся `GEMINI_MIN_INTERVAL` и `GEMINI_TIMEOUT`).
+
+Пример для vyceai.com:
+
+```
+LLM_PROVIDER=openai
+OPENAI_API_KEY=<ваш ключ>
+OPENAI_BASE_URL=https://vyceai.com/v1
+OPENAI_MODEL=<модель из GET /v1/models>
+```
+
+Запустите как обычно: `python -m validator требования.docx отчёт.md`. Паспорт отчёта показывает модель, которая реально ответила. Если провайдер не поддерживает `response_format`, агент повторяет запрос без него.
 
 ## Качество: эталон и метрики
 

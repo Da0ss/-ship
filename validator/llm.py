@@ -1,4 +1,4 @@
-"""Клиент Gemini (google-genai), реализующий протокол LLMClient."""
+"""Клиенты LLM (Gemini через google-genai и OpenAI-совместимый API), протокол LLMClient."""
 from __future__ import annotations
 
 import json
@@ -163,3 +163,155 @@ class GeminiClient:
             return _parse_json(text)
         except ValueError as e:
             raise RuntimeError(f"Модель дважды вернула некорректный JSON: {e}") from e
+
+
+# --- OpenAI-совместимый провайдер ---
+def _extract_json_block(text: str) -> Any:
+    """Parse text as JSON; fall back to the first {...} or [...] block inside it."""
+    try:
+        return _parse_json(text)
+    except ValueError:
+        pass
+    t = _strip_fences(text or "")
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(t):
+        if ch in "{[":
+            try:
+                return decoder.raw_decode(t[i:])[0]
+            except json.JSONDecodeError:
+                continue
+    raise ValueError("в ответе нет JSON")
+
+
+def _env_float(names: list[str], default: float) -> float:
+    for n in names:
+        v = os.environ.get(n)
+        if v:
+            try:
+                return float(v)
+            except ValueError:
+                return default
+    return default
+
+
+class OpenAICompatClient:
+    """Any OpenAI-compatible Chat Completions API (OpenAI, OpenRouter, vLLM, vyceai.com...)."""
+
+    def __init__(self, model: str | None = None, api_key: str | None = None,
+                 base_url: str | None = None):
+        key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not key:
+            raise RuntimeError(
+                "Не найден ключ OpenAI-совместимого API. Задайте переменную окружения "
+                "OPENAI_API_KEY, например через файл .env. Подробности см. в README."
+            )
+        self.model = model or os.environ.get("OPENAI_MODEL") or ""
+        if not self.model:
+            raise RuntimeError(
+                "Не задана модель. Задайте переменную окружения OPENAI_MODEL или параметр --model."
+            )
+        fallbacks = os.environ.get("OPENAI_FALLBACK_MODELS", "")
+        self.fallbacks = [m.strip() for m in fallbacks.split(",") if m.strip() and m.strip() != self.model]
+        self.used_models: list[str] = []
+        self.min_interval = _env_float(["LLM_MIN_INTERVAL", "GEMINI_MIN_INTERVAL"], 4.0)
+        self.timeout_s = _env_float(["LLM_TIMEOUT", "GEMINI_TIMEOUT"], 180.0)
+        self.base_url = base_url or os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1"
+        import openai
+
+        self._client = openai.OpenAI(api_key=key, base_url=self.base_url,
+                                     timeout=self.timeout_s, max_retries=0)
+        self._json_mode = True
+        self._last_call = 0.0
+
+    def _throttle(self) -> None:
+        wait = self._last_call + self.min_interval - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+
+    @staticmethod
+    def _status(exc: Exception) -> int | None:
+        code = getattr(exc, "status_code", None)
+        return code if isinstance(code, int) else None
+
+    @classmethod
+    def _is_retryable(cls, exc: Exception) -> bool:
+        code = cls._status(exc)
+        if code is not None:
+            return code == 429 or code >= 500
+        names = {c.__name__ for c in type(exc).__mro__}
+        return bool(names & {"APITimeoutError", "APIConnectionError", "TimeoutException",
+                             "TransportError", "ConnectionError", "TimeoutError", "OSError"})
+
+    def _call(self, system: str, prompt: str, schema: dict[str, Any] | None) -> str | None:
+        if schema is not None:
+            system = (system + "\n\nВерни только JSON без пояснений и без markdown. "
+                      "JSON должен соответствовать схеме:\n" + json.dumps(schema, ensure_ascii=False))
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
+        delay = BACKOFF_START
+        unavailable = 0
+        for attempt in range(MAX_RETRIES + 1):
+            self._throttle()
+            kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0.1}
+            if self._json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            try:
+                started = time.monotonic()
+                resp = self._client.chat.completions.create(**kwargs)
+                self._last_call = time.monotonic()
+                if self.model not in self.used_models:
+                    self.used_models.append(self.model)
+                text = resp.choices[0].message.content if resp.choices else None
+                _log(f"[llm] {self.model}: ответ за {time.monotonic() - started:.0f} с, "
+                     f"{len(text or '')} символов")
+                return text
+            except Exception as e:  # noqa: BLE001
+                self._last_call = time.monotonic()
+                code = self._status(e)
+                msg = str(e)
+                low = msg.lower()
+                if code == 400 and self._json_mode and any(
+                        k in low for k in ("response_format", "json_object", "not supported")):
+                    self._json_mode = False
+                    _log("[llm] провайдер не поддерживает response_format; повтор без него")
+                    continue
+                model_problem = code == 404 or (code == 403 and any(
+                    k in low for k in ("model", "verified", "not found")))
+                if code == 503:
+                    unavailable += 1
+                if (model_problem or unavailable >= SWITCH_AFTER) and self.fallbacks:
+                    old, self.model = self.model, self.fallbacks.pop(0)
+                    unavailable = 0
+                    _log(f"[llm] модель {old} недоступна ({code}); переключение на {self.model}")
+                    continue
+                if not self._is_retryable(e) or attempt >= MAX_RETRIES:
+                    raise
+                wait = delay + random.uniform(0, 0.5)
+                _log(f"[llm] ошибка запроса ({type(e).__name__}: {msg[:120]}); "
+                     f"повтор {attempt + 1}/{MAX_RETRIES} через {wait:.0f} с")
+                time.sleep(wait)
+                delay = min(delay * 2, BACKOFF_CAP)
+        return None  # недостижимо
+
+    def generate_json(self, system: str, prompt: str, schema: dict[str, Any] | None = None) -> Any:
+        text = self._call(system, prompt, schema)
+        try:
+            return _extract_json_block(text)
+        except ValueError:
+            pass
+        _log("[llm] ответ не является корректным JSON; повторный запрос к модели")
+        reprompt = (prompt + "\n\nПредыдущий ответ не удалось разобрать как JSON. "
+                    "Верни ТОЛЬКО корректный JSON без пояснений и без markdown-ограждений.")
+        text = self._call(system, reprompt, schema)
+        try:
+            return _extract_json_block(text)
+        except ValueError as e:
+            raise RuntimeError(f"Модель дважды вернула некорректный JSON: {e}") from e
+
+
+def make_client(model: str | None = None):
+    provider = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
+    if provider == "openai":
+        return OpenAICompatClient(model=model)
+    if provider == "gemini":
+        return GeminiClient(model=model)
+    raise RuntimeError(f"Неизвестный провайдер LLM: {provider}. Допустимо: gemini, openai.")
