@@ -106,6 +106,17 @@ python -m validator docs/requirements.md reports/report.md --json reports/report
 
 Паспорт показывает вывод `git describe --tags --long --always --dirty`, например `v0.5.0-0-g1a2b3c4`. Часть после `g` — хеш коммита. Если в клоне нет тегов, паспорт показывает только хеш. Отправляйте теги командой `git push origin --tags`.
 
+## Проверка на втором документе
+
+Чтобы проверить, что агент не подогнан под документ из задания, в `docs/samples/autopay.md` лежит другое учебное ТЗ (автоплатёж за коммунальные услуги) с 22 заложенными дефектами; эталон — `tests/golden/autopay.golden.json`. Документ написан после того, как правила агента были готовы, и агент под него не настраивался.
+
+```bash
+python -m validator docs/samples/autopay.md reports/autopay/report.md --json reports/autopay/report.json
+python -m validator.evaluate reports/autopay/report.json tests/golden/autopay.golden.json
+```
+
+На Windows: `run_autopay.bat`.
+
 ## Выбор модели
 
 Узнать точные идентификаторы моделей, доступных вашему ключу:

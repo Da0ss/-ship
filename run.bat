@@ -43,18 +43,28 @@ goto done
 
 :run
 set INPUT=%~1
+set OUT=reports
+set GOLDEN=tests\golden\requirements.golden.json
 if "%INPUT%"=="" set INPUT=docs\requirements.md
+if not "%~1"=="" (
+  set OUT=reports\%~n1
+  set GOLDEN=tests\golden\%~n1.golden.json
+)
+if not exist "%OUT%" mkdir "%OUT%"
 echo Проверяю %INPUT% (5-15 минут, окно не закрывайте)...
-"%VENV%\Scripts\python.exe" -m validator "%INPUT%" reports\report.md --json reports\report.json 2> reports\run.log
+"%VENV%\Scripts\python.exe" -m validator "%INPUT%" "%OUT%\report.md" --json "%OUT%\report.json" 2> "%OUT%\run.log"
 if errorlevel 1 (
-  type reports\run.log
+  type "%OUT%\run.log"
   echo.
-  echo [!] Прогон не завершился. Подробности в reports\run.log
+  echo [!] Прогон не завершился. Подробности в %OUT%\run.log
   goto done
 )
-type reports\run.log
-"%VENV%\Scripts\python.exe" -m validator.evaluate reports\report.json tests\golden\requirements.golden.json > reports\metrics.txt 2>&1
-type reports\metrics.txt
+type "%OUT%\run.log"
+if exist "%GOLDEN%" (
+  "%VENV%\Scripts\python.exe" -m validator.evaluate "%OUT%\report.json" "%GOLDEN%" > "%OUT%\metrics.txt" 2>&1
+  type "%OUT%\metrics.txt"
+)
+echo Отчёт: %OUT%\report.md и %OUT%\report.html
 
 :done
 echo.

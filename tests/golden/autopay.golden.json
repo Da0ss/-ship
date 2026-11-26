@@ -1,0 +1,281 @@
+{
+ "document": "docs/samples/autopay.md",
+ "note": "Дефекты, заложенные в учебное ТЗ автоплатежа. Эталон для проверки, что агент не подогнан под первый документ.",
+ "defects": [
+  {
+   "id": "A01",
+   "title": "Число повторов списания: до 3 (ТЗ-4) против 5 (раздел 6)",
+   "severity": "critical",
+   "defects": [
+    "contradiction"
+   ],
+   "lines": [
+    32,
+    50,
+    114
+   ]
+  },
+  {
+   "id": "A02",
+   "title": "Лимит 500 000 ₸ (ТЗ-3) против успешного списания 700 000 ₸ в критериях приёмки",
+   "severity": "critical",
+   "defects": [
+    "contradiction"
+   ],
+   "lines": [
+    30,
+    113
+   ]
+  },
+  {
+   "id": "A03",
+   "title": "SMS после оплаты (ТЗ-5) против «только push» (раздел 5)",
+   "severity": "major",
+   "defects": [
+    "contradiction"
+   ],
+   "lines": [
+    34,
+    44,
+    112
+   ]
+  },
+  {
+   "id": "A04",
+   "title": "GET для создания автоплатежа",
+   "severity": "critical",
+   "defects": [
+    "contradiction",
+    "other",
+    "design"
+   ],
+   "lines": [
+    60,
+    66
+   ]
+  },
+  {
+   "id": "A05",
+   "title": "Описание метода «Удаление» против URL /autopay/create",
+   "severity": "major",
+   "defects": [
+    "contradiction",
+    "other"
+   ],
+   "lines": [
+    61,
+    62
+   ]
+  },
+  {
+   "id": "A06",
+   "title": "Код 202 назван успешным, но не описан",
+   "severity": "major",
+   "defects": [
+    "gap",
+    "contradiction"
+   ],
+   "lines": [
+    92
+   ]
+  },
+  {
+   "id": "A07",
+   "title": "Content-Type application/json при отсутствии тела",
+   "severity": "major",
+   "defects": [
+    "contradiction",
+    "other"
+   ],
+   "lines": [
+    68,
+    70
+   ]
+  },
+  {
+   "id": "A08",
+   "title": "amount: integer в запросе, string в ответе",
+   "severity": "major",
+   "defects": [
+    "contradiction"
+   ],
+   "lines": [
+    80,
+    87
+   ]
+  },
+  {
+   "id": "A09",
+   "title": "Полный номер карты в строке URL (логи, PCI DSS)",
+   "severity": "critical",
+   "defects": [
+    "gap",
+    "other",
+    "contradiction"
+   ],
+   "lines": [
+    66,
+    76
+   ]
+  },
+  {
+   "id": "A10",
+   "title": "День 29–31: не описано списание в коротких месяцах",
+   "severity": "major",
+   "defects": [
+    "gap",
+    "ambiguity"
+   ],
+   "lines": [
+    26,
+    79
+   ]
+  },
+  {
+   "id": "A11",
+   "title": "«Быстро и удобно» — неизмеримая формулировка",
+   "severity": "major",
+   "defects": [
+    "ambiguity",
+    "unverifiable"
+   ],
+   "lines": [
+    21
+   ]
+  },
+  {
+   "id": "A12",
+   "title": "«Надёжной и выдерживать высокую нагрузку» без метрик",
+   "severity": "major",
+   "defects": [
+    "unverifiable",
+    "ambiguity"
+   ],
+   "lines": [
+    38
+   ]
+  },
+  {
+   "id": "A13",
+   "title": "Таблица и колонка Oracle в бизнес-требованиях",
+   "severity": "minor",
+   "defects": [
+    "design"
+   ],
+   "lines": [
+    40
+   ]
+  },
+  {
+   "id": "A14",
+   "title": "ТЗ-6: несколько функций в одном требовании",
+   "severity": "minor",
+   "defects": [
+    "non_singular"
+   ],
+   "lines": [
+    36
+   ]
+  },
+  {
+   "id": "A15",
+   "title": "Раздел нагрузочного тестирования — заглушка TBD",
+   "severity": "major",
+   "defects": [
+    "gap"
+   ],
+   "lines": [
+    104,
+    106
+   ]
+  },
+  {
+   "id": "A16",
+   "title": "Блок согласования не заполнен",
+   "severity": "minor",
+   "defects": [
+    "gap"
+   ],
+   "lines": [
+    116,
+    118,
+    120
+   ]
+  },
+  {
+   "id": "A17",
+   "title": "«В течение 5 минут»: нет точки отсчёта и условий измерения",
+   "severity": "major",
+   "defects": [
+    "unverifiable",
+    "ambiguity"
+   ],
+   "lines": [
+    102
+   ]
+  },
+  {
+   "id": "A18",
+   "title": "09:00 без часового пояса",
+   "severity": "major",
+   "defects": [
+    "ambiguity",
+    "gap"
+   ],
+   "lines": [
+    28
+   ]
+  },
+  {
+   "id": "A19",
+   "title": "Что видит клиент и что происходит после последней неуспешной попытки",
+   "severity": "major",
+   "defects": [
+    "gap"
+   ],
+   "lines": [
+    32,
+    46,
+    50
+   ]
+  },
+  {
+   "id": "A20",
+   "title": "Счёт не найден: клиент не уведомляется, платёж молча пропускается",
+   "severity": "major",
+   "defects": [
+    "gap"
+   ],
+   "lines": [
+    52
+   ]
+  },
+  {
+   "id": "A21",
+   "title": "Повторное списание: нет защиты от двойной оплаты одного счёта (идемпотентность)",
+   "severity": "major",
+   "defects": [
+    "gap"
+   ],
+   "lines": [
+    28,
+    32,
+    50
+   ]
+  },
+  {
+   "id": "A22",
+   "title": "Связь лимита amount (запрос) и максимума 500 000 ₸ не определена",
+   "severity": "major",
+   "defects": [
+    "ambiguity",
+    "gap",
+    "contradiction"
+   ],
+   "lines": [
+    30,
+    80
+   ]
+  }
+ ]
+}
