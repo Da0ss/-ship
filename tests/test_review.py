@@ -151,3 +151,25 @@ def test_grouped_finding_matches_golden_by_any_place():
     v = {"location": {"line_start": 37, "line_end": 37}, "also_at": [{"line_start": 150, "line_end": 150}],
          "defect": "gap"}
     assert _matches(v, {"defects": ["gap"], "lines": [150]})
+
+
+@pytest.mark.segmenter
+def test_light_stage_falls_back_to_strong_model(document, passport):
+    class Broken:
+        def generate_json(self, *a, **k):
+            raise RuntimeError("404 NOT_FOUND model")
+    strong = FakeClient()
+    msgs = []
+    report = pipeline.run(document, strong, passport, log=msgs.append, fast_client=Broken())
+    assert report.requirements and any("быстрая модель недоступна" in m for m in msgs)
+    assert any("Код уже нарезал документ" in s for s, _ in strong.calls)
+
+
+def test_fast_model_default_and_off(monkeypatch):
+    from validator import llm
+    monkeypatch.delenv("VALIDATOR_FAST_MODEL", raising=False)
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(llm, "GeminiClient", lambda model, fallbacks, min_interval: (model, fallbacks))
+    assert llm.make_fast_client()[0] == llm.DEFAULT_FAST_MODEL
+    monkeypatch.setenv("VALIDATOR_FAST_MODEL", "")
+    assert llm.make_fast_client() is None

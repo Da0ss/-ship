@@ -9,8 +9,11 @@ import sys
 import time
 from typing import Any
 
-DEFAULT_MODEL = "gemini-3.6-flash"
-DEFAULT_FALLBACKS = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-4-hydrogen"
+# Models that most free-tier keys have go last: a key without the newer ones still works.
+DEFAULT_FALLBACKS = "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-2.5-flash"
+DEFAULT_FAST_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_FAST_FALLBACKS = "gemini-3.1-flash-lite,gemini-2.5-flash-lite"
 SWITCH_AFTER = 2  # 503/404 attempts on one model before the switch to a fallback model
 MAX_RETRIES = 12
 BACKOFF_START = 5.0
@@ -337,11 +340,15 @@ def make_fast_client():
     """Optional second client for light stages (classification, verdict, checklist).
     Set VALIDATOR_FAST_MODEL (and VALIDATOR_FAST_FALLBACKS) to save the quota of the strong model.
     Returns None when not configured."""
-    fast = (os.environ.get("VALIDATOR_FAST_MODEL") or "").strip()
-    if not fast:
-        return None
     provider = (os.environ.get("LLM_PROVIDER") or "gemini").strip().lower()
-    fb = os.environ.get("VALIDATOR_FAST_FALLBACKS", "")
+    raw = os.environ.get("VALIDATOR_FAST_MODEL")
+    if raw is None and provider == "gemini":
+        raw = DEFAULT_FAST_MODEL  # not set at all: use the light Gemini model by default
+    fast = (raw or "").strip()
+    if not fast:
+        return None  # set but empty: all stages on the strong model
+    fb = os.environ.get("VALIDATOR_FAST_FALLBACKS",
+                        DEFAULT_FAST_FALLBACKS if provider == "gemini" else "")
     try:
         interval = float(os.environ.get("VALIDATOR_FAST_MIN_INTERVAL", "4.5"))
     except ValueError:

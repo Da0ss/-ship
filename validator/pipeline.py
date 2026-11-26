@@ -645,13 +645,31 @@ def make_verdict(document: Document, client: LLMClient, reqs: list[Requirement],
 
 # --- entry point --------------------------------------------------------------------------------
 
+class _FastWithFallback:
+    """Light stages run on the fast model; if it fails (not available for this key, quota),
+    the stage is repeated on the strong model instead of stopping the run."""
+
+    def __init__(self, fast: LLMClient, strong: LLMClient, log: Log):
+        self.fast, self.strong, self.log, self.broken = fast, strong, log, False
+
+    def generate_json(self, system: str, prompt: str, schema: dict | None = None):
+        if not self.broken:
+            try:
+                return self.fast.generate_json(system, prompt, schema)
+            except Exception as exc:  # noqa: BLE001
+                self.broken = True
+                self.log(f"  быстрая модель недоступна ({type(exc).__name__}); "
+                         "лёгкие этапы идут на основной модели")
+        return self.strong.generate_json(system, prompt, schema)
+
+
 def run(document: Document, client: LLMClient, passport: Passport,
         log: Log = _log_default, batch_size: int | None = None,
         fast_client: LLMClient | None = None) -> Report:
     """fast_client (optional) runs the light stages: classification of fragments, verdict text,
     review checklist. The strong client keeps the checks, set check, coverage, bank review,
     critic. This saves the small daily quota of strong free-tier models."""
-    fast = fast_client or client
+    fast = _FastWithFallback(fast_client, client, log) if fast_client else client
     batch_size = batch_size or _int(os.environ.get("VALIDATOR_BATCH_SIZE"), 15) or 15
     locator = Locator(document)
     if os.environ.get("VALIDATOR_SEGMENTER", "on").lower() == "off":
