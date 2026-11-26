@@ -693,7 +693,9 @@ def run(document: Document, client: LLMClient, passport: Passport,
     verdict = make_verdict(document, fast, reqs, checks, set_check, log, len(rejected))
     checklist, source = [], ""
     if review.enabled("VALIDATOR_CHECKLIST"):
-        checklist, source = review.fill_checklist(document, fast, locator, reqs, checks,
+        # The checklist is one call and its answers carry weight with a bank reviewer:
+        # the strong model fills it (the light one said "Да" to items with open defects).
+        checklist, source = review.fill_checklist(document, client, locator, reqs, checks,
                                                   set_check, log)
     return Report(passport=passport, requirements=reqs, checks=checks, set_check=set_check,
                   verdict=verdict, dropped_violations=dropped1 + dropped2,

@@ -105,7 +105,7 @@ def test_fast_client_runs_light_stages(document, passport):
     fast_stages = [s for s, _ in fast.calls]
     strong_stages = [s for s, _ in strong.calls]
     assert any("Код уже нарезал документ" in s for s in fast_stages)
-    assert any("аудитор процесса ревью" in s for s in fast_stages)
+    assert any("аудитор процесса ревью" in s for s in strong_stages)
     assert any("вердикт" in s for s in fast_stages)
     assert any("строгий ревьюер" in s for s in strong_stages)
     assert any("независимый критик" in s for s in strong_stages)
@@ -139,11 +139,11 @@ def test_coverage_gaps_grouped_into_one_finding():
     other = _v("ambiguity", 46)
     s = SetCheck({}, gaps + [crit, other])
     grouped = review.group_coverage(s)
-    assert len(grouped) == 4 and [g.location.line_start for g in grouped] == [37, 40, 150, 160]
-    assert crit in s.violations and other in s.violations and len(s.violations) == 3
+    assert [g.location.line_start for g in grouped] == [37, 39, 40, 150, 160]
+    assert crit not in s.violations and other in s.violations and len(s.violations) == 2
     one = s.violations[-1]
-    assert one.location.line_start == 37 and [l.line_start for l in one.also_at] == [40, 150, 160]
-    assert one.req_ids == ["R-37", "R-40", "R-150", "R-160"]
+    assert one.severity == "critical" and "критичных 1" in one.explanation
+    assert one.location.line_start == 37 and [l.line_start for l in one.also_at] == [39, 40, 150, 160]
 
 
 def test_grouped_finding_matches_golden_by_any_place():

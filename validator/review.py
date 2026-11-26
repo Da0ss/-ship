@@ -211,8 +211,14 @@ CHECKLIST_PROMPT = """Заполни чек-лист ревью для доку�
 - quote: дословная цитата места документа, которое подтверждает ответ (3–25 слов), или null,
   если ответ "нет, этого в документе нет";
 - refs: ID требований отчёта (R-..), к которым относится ответ.
-Если по пункту есть подтверждённое критичное или существенное замечание — ответ "no".
-Сам чек-лист с пустыми отметками не доказывает выполнение пункта.
+Правила ответа:
+- Если по теме пункта есть подтверждённое критичное или существенное замечание — ответ "no",
+  и в evidence назови это замечание.
+- "Согласовано" (с архитекторами, ответственными лицами, ИБ) — только если в документе есть
+  ФИО, подписи или дата согласования. Пустой блок согласующих означает "no".
+- Наличие раздела с нужным названием не доказывает выполнение пункта: проверь содержание.
+- Сам чек-лист с пустыми отметками не доказывает выполнение пункта.
+- "n/a" только если пункт действительно не относится к доработке.
 
 Пункты чек-листа:
 {items}
@@ -379,10 +385,10 @@ def dedupe(checks: list[RequirementCheck], set_check: SetCheck) -> int:
 COVERAGE_PREFIX = "Добавить критерий приёмки"
 
 
-def group_coverage(set_check: SetCheck, keep_individual: tuple[str, ...] = ("critical",)
+def group_coverage(set_check: SetCheck, keep_individual: tuple[str, ...] = ()
                    ) -> list[Violation]:
     """One finding instead of dozens of "no acceptance criterion for condition X".
-    Critical coverage gaps stay separate; the rest become one grouped finding whose places are
+    All coverage gaps (critical ones too) become one grouped finding whose places are
     listed in also_at. Returns the grouped originals (for the report's coverage table)."""
     cov = [v for v in set_check.violations
            if v.fix.startswith(COVERAGE_PREFIX) and v.severity not in keep_individual
@@ -396,10 +402,13 @@ def group_coverage(set_check: SetCheck, keep_individual: tuple[str, ...] = ("cri
     for v in cov:
         rids += [r for r in v.req_ids if r not in rids]
     first = cov[0]
+    n_crit = sum(v.severity == "critical" for v in cov)
     grouped = Violation(
-        defect="gap", criterion="ISO/IEC/IEEE 29148 5.2.6 — Полнота", severity="major",
+        defect="gap", criterion="ISO/IEC/IEEE 29148 5.2.6 — Полнота",
+        severity="critical" if n_crit else "major",
         quote=first.quote, location=first.location,
-        explanation=(f"Нет критериев приёмки для {len(cov)} условий в {len(rids)} требованиях: "
+        explanation=(f"Нет критериев приёмки для {len(cov)} условий в {len(rids)} требованиях"
+                     + (f" (из них критичных {n_crit})" if n_crit else "") + ": "
                      "граничные значения, ошибки, отключённое состояние и ответы API нельзя "
                      "принять по документу. Полный список с предлагаемыми критериями — в разделе "
                      "«Условия без критериев приёмки»."),
