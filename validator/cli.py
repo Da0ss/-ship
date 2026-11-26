@@ -142,5 +142,14 @@ def main(argv: list[str] | None = None, client=None, fast_client=None) -> int:
         from .export import write_json
         write_json(report, args.json_path)
         _log(f"JSON: {args.json_path}")
+    try:  # interactive HTML next to the Markdown report (document + findings)
+        from .export import report_to_dict
+        from .html_report import render_html
+        html_path = out_path.with_suffix(".html")
+        lines = [(l.no, l.text, l.page) for l in document.lines]
+        html_path.write_text(render_html(report_to_dict(report), lines), encoding="utf-8")
+        _log(f"HTML: {html_path}")
+    except Exception as exc:  # the Markdown report is the deliverable; HTML is a bonus
+        _log(f"HTML-отчёт не создан: {exc}")
     _log(f"Готово. Отчёт: {out_path}")
     return 0
