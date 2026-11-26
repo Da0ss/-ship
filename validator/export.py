@@ -37,6 +37,7 @@ def _violation(v: Violation, scope: str, rid: str | None = None) -> dict:
         "fix_type": v.fix_type,
         "options": list(v.options),
         "tag": v.tag,
+        "also_at": [_loc(l) for l in v.also_at],
         "req_ids": req_ids,
     }
 
@@ -77,6 +78,9 @@ def report_to_dict(report: Report) -> dict:
                    "rejected": rejected},
         "dropped_violations": report.dropped_violations,
         "merged_duplicates": report.merged_duplicates,
+        "coverage_gaps": [{"quote": v.quote, "location": _loc(v.location),
+                           "condition": v.explanation, "fix": v.fix, "req_ids": list(v.req_ids)}
+                          for v in report.coverage_gaps],
         "checklist": {"source": report.checklist_source, "items": [{
             "item": c.item, "status": c.status, "evidence": c.evidence, "quote": c.quote,
             "location": _loc(c.location), "refs": list(c.refs)} for c in report.checklist]},

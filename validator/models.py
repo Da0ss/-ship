@@ -110,6 +110,7 @@ class Violation:
     fix_type: str = "edit"
     options: list[str] = field(default_factory=list)
     tag: str | None = None  # "fintech" for bank-domain findings, "security" for ИБ findings
+    also_at: list[Location] = field(default_factory=list)  # more places of a grouped finding
 
 
 @dataclass
@@ -170,6 +171,7 @@ class Report:
     checklist: list[ChecklistItem] = field(default_factory=list)
     checklist_source: str = ""  # "document" | "template" | "" (stage off)
     merged_duplicates: int = 0  # findings merged by the deduplication step
+    coverage_gaps: list[Violation] = field(default_factory=list)  # grouped acceptance gaps
 
 
 class LLMClient(Protocol):

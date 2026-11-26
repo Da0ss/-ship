@@ -376,5 +376,41 @@ def dedupe(checks: list[RequirementCheck], set_check: SetCheck) -> int:
     return merged
 
 
+COVERAGE_PREFIX = "Добавить критерий приёмки"
+
+
+def group_coverage(set_check: SetCheck, keep_individual: tuple[str, ...] = ("critical",)
+                   ) -> list[Violation]:
+    """One finding instead of dozens of "no acceptance criterion for condition X".
+    Critical coverage gaps stay separate; the rest become one grouped finding whose places are
+    listed in also_at. Returns the grouped originals (for the report's coverage table)."""
+    cov = [v for v in set_check.violations
+           if v.fix.startswith(COVERAGE_PREFIX) and v.severity not in keep_individual
+           and v.location is not None]
+    if len(cov) < 3:
+        return []
+    for v in cov:
+        set_check.violations.remove(v)
+    cov.sort(key=lambda v: v.location.line_start)
+    rids: list[str] = []
+    for v in cov:
+        rids += [r for r in v.req_ids if r not in rids]
+    first = cov[0]
+    grouped = Violation(
+        defect="gap", criterion="ISO/IEC/IEEE 29148 5.2.6 — Полнота", severity="major",
+        quote=first.quote, location=first.location,
+        explanation=(f"Нет критериев приёмки для {len(cov)} условий в {len(rids)} требованиях: "
+                     "граничные значения, ошибки, отключённое состояние и ответы API нельзя "
+                     "принять по документу. Полный список с предлагаемыми критериями — в разделе "
+                     "«Условия без критериев приёмки»."),
+        fix="Добавить в раздел «Критерии приемки» строки из таблицы «Условия без критериев "
+            "приёмки» (по одной на условие).",
+        req_ids=rids, verified=True,
+        also_at=[v.location for v in cov[1:]],
+    )
+    set_check.violations.append(grouped)
+    return cov
+
+
 def enabled(name: str) -> bool:
     return os.environ.get(name, "on").lower() != "off"

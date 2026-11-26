@@ -686,6 +686,9 @@ def run(document: Document, client: LLMClient, passport: Passport,
         log(f"Проверки кодом: возвращено замечаний после критика {back}")
     questions = review.guard_invented_values(document, checks, set_check)
     merged = review.dedupe(checks, set_check)
+    coverage_gaps = review.group_coverage(set_check)
+    if coverage_gaps:
+        log(f"Условия без критериев приёмки сведены в одну таблицу: {len(coverage_gaps)}")
     log(f"Повторы объединены: {merged}; правок с выдуманными значениями переведено в вопросы: {questions}")
     verdict = make_verdict(document, fast, reqs, checks, set_check, log, len(rejected))
     checklist, source = [], ""
@@ -695,4 +698,5 @@ def run(document: Document, client: LLMClient, passport: Passport,
     return Report(passport=passport, requirements=reqs, checks=checks, set_check=set_check,
                   verdict=verdict, dropped_violations=dropped1 + dropped2,
                   critic_rejected=rejected, critic_adjusted=adjusted, critic_ran=critic_on,
-                  checklist=checklist, checklist_source=source, merged_duplicates=merged)
+                  checklist=checklist, checklist_source=source, merged_duplicates=merged,
+                  coverage_gaps=coverage_gaps)

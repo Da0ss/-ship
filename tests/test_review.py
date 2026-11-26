@@ -130,3 +130,24 @@ def test_bank_finding_not_merged_into_iso_finding():
     bank.tag = "fintech"
     s = SetCheck({}, [iso, bank])
     assert review.dedupe([], s) == 0 and len(s.violations) == 2
+
+
+def test_coverage_gaps_grouped_into_one_finding():
+    gaps = [_v("gap", n, fix=f"Добавить критерий приёмки: случай {n}", req_ids=[f"R-{n:02d}"])
+            for n in (40, 37, 150, 160)]
+    crit = _v("gap", 39, fix="Добавить критерий приёмки: главный", severity="critical")
+    other = _v("ambiguity", 46)
+    s = SetCheck({}, gaps + [crit, other])
+    grouped = review.group_coverage(s)
+    assert len(grouped) == 4 and [g.location.line_start for g in grouped] == [37, 40, 150, 160]
+    assert crit in s.violations and other in s.violations and len(s.violations) == 3
+    one = s.violations[-1]
+    assert one.location.line_start == 37 and [l.line_start for l in one.also_at] == [40, 150, 160]
+    assert one.req_ids == ["R-37", "R-40", "R-150", "R-160"]
+
+
+def test_grouped_finding_matches_golden_by_any_place():
+    from validator.evaluate import _matches
+    v = {"location": {"line_start": 37, "line_end": 37}, "also_at": [{"line_start": 150, "line_end": 150}],
+         "defect": "gap"}
+    assert _matches(v, {"defects": ["gap"], "lines": [150]})

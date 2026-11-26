@@ -104,6 +104,10 @@ def _violation_lines(n: int, v: Violation, with_req_ids: bool = False,
         others = [r for r in v.req_ids if r != owner]
         if others:
             lines.append("   - Также относится к: " + ", ".join(others))
+    if v.also_at:
+        places = sorted({l.line_start for l in v.also_at})
+        shown = ", ".join(map(str, places[:12])) + (" …" if len(places) > 12 else "")
+        lines.append(f"   - Ещё места: строки {shown}")
     lines.append(f"   - Проблема: {_one_line(v.explanation)}")
     lines += _fix_lines(v)
     return lines
@@ -319,6 +323,22 @@ def render(report: Report) -> str:
                        f"{_cell(ev)} | {_cell(where)} |")
         out.append("")
 
+    # 9 (rendered after 8): acceptance gaps table
+    cov_block: list[str] = []
+    if report.coverage_gaps:
+        cov_block += ["## 9. Условия без критериев приёмки", "",
+                      "Сводная таблица к замечанию «Нет критериев приёмки» (раздел 4). Каждая строка — "
+                      "условие из требования, для которого в документе нет проверки, и готовый "
+                      "критерий, который можно вставить в раздел «Критерии приемки».", "",
+                      "| № | Требование | Условие | Место | Предлагаемый критерий приёмки |",
+                      "|---|---|---|---|---|"]
+        for i, v in enumerate(report.coverage_gaps, 1):
+            cond = v.explanation.removeprefix("Нет критерия приёмки для условия: ").split(". Требование покрывают")[0]
+            crit = v.fix.removeprefix("Добавить критерий приёмки: ")
+            cov_block.append(f"| {i} | {', '.join(v.req_ids)} | {_cell(_short(cond, 140))} | "
+                             f"{_cell(v.location.ru() if v.location else '—')} | {_cell(_short(crit, 200))} |")
+        cov_block.append("")
+
     # 8
     q = questions(report)
     if q:
@@ -330,6 +350,7 @@ def render(report: Report) -> str:
             for j, o in enumerate(v.options[:5]):
                 out.append(f"   - {_LETTERS[j]}) {_one_line(o)}")
         out.append("")
+    out += cov_block
     body = "\n".join(out)
     rows = ["### Самопроверка отчёта", "", "| Правило | Результат | Подробности |", "|---|---|---|"]
     for rule, ok, detail in self_check(report, body):

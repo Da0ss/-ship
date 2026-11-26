@@ -24,6 +24,9 @@ def _spans(v: dict[str, Any]) -> list[tuple[int, int]]:
         loc = v.get(key)
         if loc:
             spans.append((loc["line_start"], loc["line_end"]))
+    for loc in v.get("also_at") or []:  # places of a grouped finding
+        if loc:
+            spans.append((loc["line_start"], loc["line_end"]))
     return spans
 
 
