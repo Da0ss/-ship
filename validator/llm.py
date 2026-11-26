@@ -15,7 +15,14 @@ DEFAULT_FALLBACKS = "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-2
 DEFAULT_FAST_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_FAST_FALLBACKS = "gemini-3.1-flash-lite,gemini-2.5-flash-lite"
 SWITCH_AFTER = 2  # 503/404 attempts on one model before the switch to a fallback model
-MAX_RETRIES = 12
+MAX_RETRIES = 20  # Gemini free tier is often overloaded (503): be patient rather than fail
+
+
+def _max_retries() -> int:
+    try:
+        return max(1, int(os.environ.get("LLM_MAX_RETRIES", MAX_RETRIES)))
+    except ValueError:
+        return MAX_RETRIES
 BACKOFF_START = 5.0
 BACKOFF_CAP = 60.0
 
@@ -126,7 +133,7 @@ class GeminiClient:
         config = t.GenerateContentConfig(**cfg)
         delay = BACKOFF_START
         failures_on_model = 0
-        for attempt in range(MAX_RETRIES + 1):
+        for attempt in range(_max_retries() + 1):
             self._throttle()
             try:
                 started = time.monotonic()
@@ -161,13 +168,13 @@ class GeminiClient:
                         time.sleep(min(delay, BACKOFF_CAP) / 2)
                         delay = min(delay * 1.5, BACKOFF_CAP)
                         continue
-                if not (self._is_retryable(e) or overloaded) or attempt >= MAX_RETRIES:
+                if not (self._is_retryable(e) or overloaded) or attempt >= _max_retries():
                     raise
                 wait = self._retry_delay(e)
                 wait = min(max(wait + 1, 1), 300) if wait is not None else delay
                 wait += random.uniform(0, 0.5)
                 _log(f"[gemini] ошибка запроса ({type(e).__name__}: {str(e)[:120]}); "
-                     f"повтор {attempt + 1}/{MAX_RETRIES} через {wait:.0f} с")
+                     f"повтор {attempt + 1}/{_max_retries()} через {wait:.0f} с")
                 time.sleep(wait)
                 delay = min(delay * 2, BACKOFF_CAP)
         return None  # недостижимо
@@ -273,7 +280,7 @@ class OpenAICompatClient:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
         delay = BACKOFF_START
         unavailable = 0
-        for attempt in range(MAX_RETRIES + 1):
+        for attempt in range(_max_retries() + 1):
             self._throttle()
             kwargs: dict[str, Any] = {"model": self.model, "messages": messages, "temperature": 0.1}
             if self._json_mode:
@@ -311,11 +318,11 @@ class OpenAICompatClient:
                     unavailable = 0
                     _log(f"[llm] модель {old} недоступна ({code}); переключение на {self.model}")
                     continue
-                if not self._is_retryable(e) or attempt >= MAX_RETRIES:
+                if not self._is_retryable(e) or attempt >= _max_retries():
                     raise
                 wait = delay + random.uniform(0, 0.5)
                 _log(f"[llm] ошибка запроса ({type(e).__name__}: {msg[:120]}); "
-                     f"повтор {attempt + 1}/{MAX_RETRIES} через {wait:.0f} с")
+                     f"повтор {attempt + 1}/{_max_retries()} через {wait:.0f} с")
                 time.sleep(wait)
                 delay = min(delay * 2, BACKOFF_CAP)
         return None  # недостижимо
